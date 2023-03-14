@@ -19,6 +19,7 @@ use avail_subxt::api::runtime_types::{da_control::pallet::Call, da_runtime::Runt
 use avail_subxt::primitives::AppUncheckedExtrinsic;
 use base64::{engine::general_purpose, Engine as _};
 use codec::Decode;
+use kate_recovery::com::AppData;
 use num::{BigUint, FromPrimitive};
 use rand::{thread_rng, Rng};
 use rocksdb::DB;
@@ -150,7 +151,7 @@ fn appdata(
 	decode: bool,
 ) -> ClientResponse<ExtrinsicsDataResponse> {
 	fn decode_app_data_to_extrinsics(
-		data: Result<Option<Vec<Vec<u8>>>>,
+		data: Result<Option<AppData>>,
 	) -> Result<Option<Vec<AppUncheckedExtrinsic>>> {
 		let xts = data.map(|e| {
 			e.map(|e| {
