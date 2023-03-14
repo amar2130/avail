@@ -11,12 +11,13 @@ use anyhow::{anyhow, Context, Result};
 use async_std::stream::StreamExt;
 use avail_subxt::primitives::Header;
 use consts::STATE_CF;
+use kate_recovery::com::AppData;
 use libp2p::{metrics::Metrics as LibP2PMetrics, Multiaddr, PeerId};
 use prometheus_client::registry::Registry;
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use structopt::StructOpt;
-use tokio::sync::mpsc::{channel, Sender};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::{
 	fmt::format::{self, DefaultFields, Format, Full, Json},
@@ -235,7 +236,9 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to
 		// libp2p backed application client
-		let (block_tx, block_rx) = channel::<types::BlockVerified>(1 << 7);
+		let (block_tx, block_rx) = channel::<types::BlockVerified>(128);
+		let (app_tx, app_rx) = channel::<AppData>(128);
+
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
 			db.clone(),
@@ -243,8 +246,17 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			rpc_client.clone(),
 			app_id,
 			block_rx,
+			app_tx,
 			pp.clone(),
 		));
+
+		async fn run(mut app_rx: Receiver<AppData>) {
+			while let Some(_block) = app_rx.recv().await {
+				info!("App data received");
+			}
+		}
+
+		tokio::task::spawn(run(app_rx));
 		Some(block_tx)
 	} else {
 		None

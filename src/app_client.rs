@@ -16,7 +16,9 @@ use anyhow::{anyhow, Context, Result};
 use avail_subxt::AvailConfig;
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
-	com::{app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns},
+	com::{
+		app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns, AppData,
+	},
 	commitments,
 	config::{self, CHUNK_SIZE},
 	data::{Cell, DataCell},
@@ -28,7 +30,7 @@ use std::{
 	sync::Arc,
 };
 use subxt::OnlineClient;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{debug, error, info, instrument};
 
 use crate::{
@@ -204,7 +206,7 @@ async fn process_block(
 	app_id: u32,
 	block: &BlockVerified,
 	pp: PublicParameters,
-) -> Result<()> {
+) -> Result<AppData> {
 	let lookup = &block.lookup;
 	let block_number = block.block_num;
 	let dimensions = &block.dimensions;
@@ -323,7 +325,7 @@ async fn process_block(
 	let bytes_count = data.iter().fold(0usize, |acc, x| acc + x.len());
 	debug!(block_number, "Stored {bytes_count} bytes into database");
 
-	Ok(())
+	Ok(data)
 }
 
 /// Runs application client.
@@ -344,6 +346,7 @@ pub async fn run(
 	rpc_client: OnlineClient<AvailConfig>,
 	app_id: u32,
 	mut block_receive: Receiver<BlockVerified>,
+	app_sender: Sender<AppData>,
 	pp: PublicParameters,
 ) {
 	info!("Starting for app {app_id}...");
@@ -373,7 +376,7 @@ pub async fn run(
 			continue;
 		}
 
-		if let Err(error) = process_block(
+		match process_block(
 			&cfg,
 			db.clone(),
 			network_client.clone(),
@@ -384,9 +387,13 @@ pub async fn run(
 		)
 		.await
 		{
-			error!(block_number, "Cannot process block: {error}");
-		} else {
-			debug!(block_number, "Block processed");
+			Err(error) => error!(block_number, "Cannot process block: {error}"),
+			Ok(data) => {
+				debug!(block_number, "Block processed");
+				if let Err(error) = app_sender.send(data).await {
+					error!(block_number, "Cannot send app data to channel: {error}");
+				};
+			},
 		}
 	}
 }
