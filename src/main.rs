@@ -17,7 +17,7 @@ use prometheus_client::registry::Registry;
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use structopt::StructOpt;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::mpsc::{channel, Sender};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::{
 	fmt::format::{self, DefaultFields, Format, Full, Json},
@@ -32,6 +32,7 @@ use crate::{
 
 mod app_client;
 mod consts;
+mod custom;
 mod data;
 mod http;
 mod light_client;
@@ -250,13 +251,17 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			pp.clone(),
 		));
 
-		async fn run(mut app_rx: Receiver<AppData>) {
-			while let Some(_block) = app_rx.recv().await {
-				info!("App data received");
-			}
-		}
-
-		tokio::task::spawn(run(app_rx));
+		let mut custom_client = custom::CustomClient {
+		    node_host: "http://localhost:9090".to_string(),
+		    chain_id: "avail-poc".to_string(),
+		    contract: "wasm14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s0phg4d".to_string(),
+		    sender_mnemonic: "shine write toilet urban pink alien happy early icon rent craft fever subway praise oppose wine detail buffalo basket slab aim razor salmon seek".to_string(),
+		    sender_password: "".to_string(),
+		    sender_account_number: 0,
+		    sequence: 14
+		};
+		let error_sender = error_sender.clone();
+		tokio::task::spawn(async move { custom_client.run(app_rx, error_sender).await });
 		Some(block_tx)
 	} else {
 		None
