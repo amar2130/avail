@@ -66,9 +66,8 @@ pub mod config {
 	}
 }
 
-// TODO
+// TODO:
 // - check balance on smart contract in cosmos
-// - and submit tx to avail through avail-light client
 
 fn private_key(mnemonic: &str, password: &str) -> Result<SigningKey> {
 	let mnemonic = Mnemonic::parse(mnemonic)?;

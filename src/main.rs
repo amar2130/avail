@@ -151,10 +151,28 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	tokio::task::spawn(telemetry::http_server(incoming, metric_registry));
 
 	let db = init_db(&cfg.avail_path).context("Cannot initialize database")?;
+	let last_full_node_ws = data::get_last_full_node_ws_from_db(db.clone())?;
+
+	let version = rpc::Version {
+		version: "1.5.0".to_string(),
+		spec_version: 8,
+		spec_name: "data-avail".to_string(),
+	};
+
+	let (rpc_client, last_full_node_ws) =
+		rpc::connect_to_the_full_node(&cfg.full_node_ws, last_full_node_ws, version).await?;
+
+	store_last_full_node_ws_in_db(db.clone(), last_full_node_ws)?;
 
 	// Spawn tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
-	tokio::task::spawn(http::run_server(db.clone(), cfg.clone(), counter.clone()));
+	tokio::task::spawn(http::run_server(
+		db.clone(),
+		cfg.clone(),
+		counter.clone(),
+		rpc_client.clone(),
+		cfg.app_id.clone(),
+	));
 
 	let (network_client, network_event_loop) = network::init(
 		(&cfg).into(),
@@ -222,18 +240,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	let public_params_hash = hex::encode(sp_core::blake2_128(&raw_pp));
 	let public_params_len = hex::encode(raw_pp).len();
 	trace!("Public params ({public_params_len}): hash: {public_params_hash}");
-
-	let last_full_node_ws = data::get_last_full_node_ws_from_db(db.clone())?;
-
-	let version = rpc::Version {
-		version: "1.5.0".to_string(),
-		spec_version: 8,
-		spec_name: "data-avail".to_string(),
-	};
-	let (rpc_client, last_full_node_ws) =
-		rpc::connect_to_the_full_node(&cfg.full_node_ws, last_full_node_ws, version).await?;
-
-	store_last_full_node_ws_in_db(db.clone(), last_full_node_ws)?;
 
 	let block_tx = if let Mode::AppClient(app_id) = Mode::from(cfg.app_id) {
 		// communication channels being established for talking to

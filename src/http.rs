@@ -2,21 +2,26 @@
 //!
 //! # Endpoints
 //!
-//! * `/v1/mode` - returns client mode (light or light+app client)
-//! * `/v1/status` - returns status of a latest processed block
-//! * `/v1/latest_block` - returns latest processed block
-//! * `/v1/confidence/{block_number}` - returns calculated confidence for a given block number
-//! * `/v1/appdata/{block_number}` - returns decoded extrinsic data for configured app_id and given block number
-
+//! * `GET /v1/mode` - returns client mode (light or light+app client)
+//! * `GET /v1/status` - returns status of a latest processed block
+//! * `GET /v1/latest_block` - returns latest processed block
+//! * `GET /v1/confidence/{block_number}` - returns calculated confidence for a given block number
+//! * `GET /v1/appdata/{block_number}` - returns decoded extrinsic data for configured app_id and given block number
+//! * `POST /v1/appdata` - submits app data to avail
 use std::{
+	convert::Infallible,
 	net::SocketAddr,
 	str::FromStr,
 	sync::{Arc, Mutex},
 };
 
 use anyhow::{Context, Result};
-use avail_subxt::api::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall};
-use avail_subxt::primitives::AppUncheckedExtrinsic;
+use avail_subxt::{
+	api::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall},
+	api::{self, runtime_types::sp_core::bounded::bounded_vec::BoundedVec},
+	primitives::{AppUncheckedExtrinsic, AvailExtrinsicParams},
+	AvailConfig,
+};
 use base64::{engine::general_purpose, Engine as _};
 use codec::Decode;
 use kate_recovery::com::AppData;
@@ -24,6 +29,8 @@ use num::{BigUint, FromPrimitive};
 use rand::{thread_rng, Rng};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
+use sp_keyring::AccountKeyring;
+use subxt::{tx::PairSigner, OnlineClient};
 use tracing::{debug, info};
 use warp::{http::StatusCode, Filter};
 
@@ -209,6 +216,28 @@ fn appdata(
 	res
 }
 
+async fn post_appdata(
+	app_id: Option<u32>,
+	client: Arc<OnlineClient<AvailConfig>>,
+	value: serde_json::Value,
+) -> Result<ClientResponse<serde_json::Value>, Infallible> {
+	let Some(app_id) = app_id else {
+	    return Ok(ClientResponse::Normal("Application is not configured".into()));
+	};
+	let signer = PairSigner::new(AccountKeyring::Alice.pair());
+	let data = value.to_string().into_bytes();
+	let data_transfer = api::tx().data_availability().submit_data(BoundedVec(data));
+	let extrinsic_params = AvailExtrinsicParams::new_with_app_id(app_id.into());
+
+	client
+		.tx()
+		.sign_and_submit(&data_transfer, &signer, extrinsic_params)
+		.await
+		.unwrap();
+
+	Ok(ClientResponse::Normal(value))
+}
+
 impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 	fn into_response(self) -> warp::reply::Response {
 		match self {
@@ -245,7 +274,13 @@ struct AppDataQuery {
 }
 
 /// Runs HTTP server
-pub async fn run_server(store: Arc<DB>, cfg: RuntimeConfig, counter: Arc<Mutex<u32>>) {
+pub async fn run_server(
+	store: Arc<DB>,
+	cfg: RuntimeConfig,
+	counter: Arc<Mutex<u32>>,
+	client: OnlineClient<AvailConfig>,
+	app_id: Option<u32>,
+) {
 	let host = cfg.http_server_host.clone();
 	let port = if cfg.http_server_port.1 > 0 {
 		let port: u16 = thread_rng().gen_range(cfg.http_server_port.0..=cfg.http_server_port.1);
@@ -292,20 +327,30 @@ pub async fn run_server(store: Arc<DB>, cfg: RuntimeConfig, counter: Arc<Mutex<u
 		let counter_lock = counter_status.lock().unwrap();
 		status(&cfg, *counter_lock, db.clone())
 	});
+
+	let client = Arc::new(client);
+	let post_appdata = warp::path!("v1" / "appdata")
+		.and(warp::body::json::<serde_json::Value>())
+		.and_then(move |value| {
+			let client = client.clone();
+			async move { post_appdata(app_id, client, value).await }
+		});
+
 	let cors = warp::cors()
 		.allow_any_origin()
 		.allow_header("content-type")
 		.allow_methods(vec!["GET", "POST", "DELETE"]);
 
-	let route = warp::get().and(
-		get_mode
-			.or(get_latest_block)
-			.or(get_confidence)
-			.or(get_appdata)
-			.or(get_status),
-	);
-
-	let routes = route.with(cors);
+	let routes = warp::get()
+		.and(
+			get_mode
+				.or(get_latest_block)
+				.or(get_confidence)
+				.or(get_appdata)
+				.or(get_status),
+		)
+		.or(warp::post().and(post_appdata))
+		.with(cors);
 
 	let addr = SocketAddr::from_str(format!("{host}:{port}").as_str())
 		.context("Unable to parse host address from config")
