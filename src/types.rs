@@ -279,6 +279,14 @@ pub struct RuntimeConfig {
 	pub max_kad_record_size: u64,
 	/// The maximum number of provider records for which the local node is the provider. (default: 1024).
 	pub max_kad_provided_keys: u64,
+
+	pub node_host: String,
+	pub chain_id: String,
+	pub contract: String,
+	pub sender_mnemonic: String,
+	pub sender_password: String,
+	pub sender_account_number: u64,
+	pub sequence_start: u64,
 }
 
 pub struct Delay(Option<Duration>);
@@ -459,6 +467,13 @@ impl Default for RuntimeConfig {
 			max_kad_record_number: 2400000,
 			max_kad_record_size: 8192,
 			max_kad_provided_keys: 1024,
+			node_host: "http://localhost:9090".to_owned(),
+			chain_id: "avail-poc".to_owned(),
+			contract: "wasmcontract".to_owned(),
+			sender_mnemonic: "sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender".to_owned(),
+			sender_password: "".to_owned(),
+			sender_account_number: 0,
+			sequence_start: 1,
 		}
 	}
 }

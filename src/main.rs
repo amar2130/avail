@@ -252,16 +252,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			pp.clone(),
 		));
 
-		let mut custom_client = custom::CustomClient {
-		    node_host: "http://localhost:9090".to_string(),
-		    chain_id: "avail-poc".to_string(),
-		    contract: "wasm14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9s0phg4d".to_string(),
-		    sender_mnemonic: "shine write toilet urban pink alien happy early icon rent craft fever subway praise oppose wine detail buffalo basket slab aim razor salmon seek".to_string(),
-		    sender_password: "".to_string(),
-		    sender_account_number: 0,
-		    sequence: 14
-		};
 		let error_sender = error_sender.clone();
+		let mut custom_client = custom::CustomClient::new((&cfg).into());
 		tokio::task::spawn(async move { custom_client.run(app_rx, error_sender).await });
 		Some(block_tx)
 	} else {
