@@ -286,7 +286,6 @@ pub struct RuntimeConfig {
 	pub sender_mnemonic: String,
 	pub sender_password: String,
 	pub sender_account_number: u64,
-	pub sequence_start: u64,
 }
 
 pub struct Delay(Option<Duration>);
@@ -473,7 +472,6 @@ impl Default for RuntimeConfig {
 			sender_mnemonic: "sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender sender".to_owned(),
 			sender_password: "".to_owned(),
 			sender_account_number: 0,
-			sequence_start: 1,
 		}
 	}
 }

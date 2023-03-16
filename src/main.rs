@@ -253,7 +253,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		));
 
 		let error_sender = error_sender.clone();
-		let mut custom_client = custom::CustomClient::new((&cfg).into());
+		let mut custom_client = custom::CustomClient::new((&cfg).into()).await?;
 		tokio::task::spawn(async move { custom_client.run(app_rx, error_sender).await });
 		Some(block_tx)
 	} else {
