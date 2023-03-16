@@ -42,6 +42,7 @@ mod rpc;
 mod subscriptions;
 mod sync_client;
 mod telemetry;
+mod toolkit;
 mod types;
 mod utils;
 

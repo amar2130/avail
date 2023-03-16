@@ -1,12 +1,6 @@
-use std::str::FromStr;
-
-use anyhow::{anyhow, Context, Result};
-use avail_subxt::{
-	api::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall},
-	primitives::AppUncheckedExtrinsic,
-};
+use crate::toolkit;
+use anyhow::{anyhow, Result};
 use bip39::Mnemonic;
-use codec::Decode;
 use cosmrs::{
 	bip32,
 	crypto::secp256k1::SigningKey,
@@ -18,42 +12,24 @@ use cosmrs::{
 	Coin,
 };
 use kate_recovery::com::AppData;
-use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::error;
 
-// mod custom
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct Transfer {
-	pub from: String,
-	pub to: String,
-	pub amount: String,
-}
+mod types {
+	use serde::{Deserialize, Serialize};
 
-// mod custom
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub enum ExecuteTransfers {
-	TransferBalance { transfers: Vec<Transfer> },
-}
+	#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+	pub struct Transfer {
+		pub from: String,
+		pub to: String,
+		pub amount: String,
+	}
 
-// mod toolkit
-fn decode_app_data<T: for<'a> Deserialize<'a>>(data: AppData) -> Result<Vec<T>> {
-	let xts: Vec<AppUncheckedExtrinsic> = data
-		.iter()
-		.enumerate()
-		.map(|(i, raw)| {
-			<_ as Decode>::decode(&mut &raw[..])
-				.context(format!("Couldn't decode AvailExtrinsic num {i}"))
-		})
-		.collect::<Result<Vec<_>>>()?;
-
-	xts.iter()
-		.flat_map(|xt| match &xt.function {
-			RuntimeCall::DataAvailability(Call::submit_data { data, .. }) => Some(data),
-			_ => None,
-		})
-		.map(|data| serde_json::from_slice::<T>(&data.0).map_err(|error| anyhow!("{error}")))
-		.collect::<Result<Vec<T>>>()
+	#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+	pub enum ExecuteTransfers {
+		TransferBalance { transfers: Vec<Transfer> },
+	}
 }
 
 // TODO
@@ -62,7 +38,6 @@ fn decode_app_data<T: for<'a> Deserialize<'a>>(data: AppData) -> Result<Vec<T>> 
 // - check balance on smart contract in cosmos
 // - and submit tx to avail through avail-light client
 
-// mod custom
 pub struct CustomClient {
 	pub node_host: String,
 	pub chain_id: String,
@@ -73,7 +48,6 @@ pub struct CustomClient {
 	pub sequence: u64,
 }
 
-// mod custom
 impl CustomClient {
 	fn sender_private_key(&self) -> Result<SigningKey> {
 		let mnemonic = Mnemonic::parse(self.sender_mnemonic.clone())?;
@@ -84,9 +58,9 @@ impl CustomClient {
 	}
 
 	async fn process_block(&self, data: AppData) -> Result<BroadcastTxRequest> {
-		let transfers = decode_app_data(data)?;
+		let transfers = toolkit::decode_json_app_data(data)?;
 
-		let msg = serde_json::to_vec(&ExecuteTransfers::TransferBalance { transfers })?;
+		let msg = serde_json::to_vec(&types::ExecuteTransfers::TransferBalance { transfers })?;
 
 		// NOTE: We cannot pass SigningKey to async fn due to missing Send marker
 		let sender_private_key = self.sender_private_key()?;
@@ -139,9 +113,8 @@ impl CustomClient {
 		    }
 		    return;
 		};
-		// mod toolkit
+
 		while let Some(block) = app_rx.recv().await {
-			// mod custom
 			match self.process_block(block).await {
 				Ok(request) => {
 					if let Err(error) = &client.broadcast_tx(request).await {
