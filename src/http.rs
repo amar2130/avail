@@ -222,6 +222,25 @@ fn appdata(
 	res
 }
 
+async fn custom_get_state(
+	query_client: Arc<Mutex<QueryClient<Channel>>>,
+	contract: String,
+) -> Result<ClientResponse<custom::Balances>, Infallible> {
+	let query_data = serde_json::to_vec(&custom::QueryMsg::Balances {}).unwrap();
+	let request = QuerySmartContractStateRequest {
+		address: contract,
+		query_data,
+	};
+
+	let mut query_client = query_client.lock().unwrap().clone();
+	let query_response = query_client.smart_contract_state(request);
+	let response = query_response.await.unwrap().into_inner();
+
+	let balances: custom::Balances = serde_json::from_slice(&response.data).unwrap();
+
+	Ok(ClientResponse::Normal(balances))
+}
+
 async fn custom_post_appdata(
 	app_id: Option<u32>,
 	client: Arc<OnlineClient<AvailConfig>>,
@@ -376,16 +395,24 @@ pub async fn run_server(
 	});
 
 	let client = Arc::new(client);
-	// TODO: Hadnle errors from server
+	// TODO: Handle errors from server
 	let query_client = Arc::new(Mutex::new(QueryClient::connect(node_host).await.unwrap()));
+	let query_client_post_appdata = query_client.clone();
+	let contract_post_appdata = contract.clone();
 	let post_appdata = warp::path!("v1" / "appdata")
 		.and(warp::body::json::<serde_json::Value>())
 		.and_then(move |value| {
 			let client = client.clone();
-			let query_client = query_client.clone();
-			let contract = contract.clone();
+			let query_client = query_client_post_appdata.clone();
+			let contract = contract_post_appdata.to_owned();
 			async move { custom_post_appdata(app_id, client, query_client, contract, value).await }
 		});
+
+	let get_custom_state = warp::path!("v1" / "custom" / "state").and_then(move || {
+		let query_client = query_client.clone();
+		let contract = contract.clone();
+		async move { custom_get_state(query_client, contract).await }
+	});
 
 	let cors = warp::cors()
 		.allow_any_origin()
@@ -398,7 +425,8 @@ pub async fn run_server(
 				.or(get_latest_block)
 				.or(get_confidence)
 				.or(get_appdata)
-				.or(get_status),
+				.or(get_status)
+				.or(get_custom_state),
 		)
 		.or(warp::post().and(post_appdata))
 		.with(cors);
