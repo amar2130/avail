@@ -425,6 +425,7 @@ dependencies = [
  "threadpool",
  "tokio",
  "tokio-stream",
+ "tonic",
  "tracing",
  "tracing-subscriber 0.3.16",
  "url",

@@ -171,7 +171,6 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		cfg.clone(),
 		counter.clone(),
 		rpc_client.clone(),
-		cfg.app_id.clone(),
 	));
 
 	let (network_client, network_event_loop) = network::init(

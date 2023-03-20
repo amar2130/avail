@@ -1,3 +1,4 @@
+use self::config::CustomClientConfig;
 use crate::toolkit;
 use anyhow::{anyhow, Context, Result};
 use bip39::Mnemonic;
@@ -18,13 +19,12 @@ use cosmrs::{
 	Coin,
 };
 use kate_recovery::com::AppData;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info};
 
-use self::config::CustomClientConfig;
-
-mod types {
+pub mod types {
 	use serde::{Deserialize, Serialize};
 
 	#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -93,6 +93,22 @@ fn sequence(response: QueryAccountResponse) -> Result<u64> {
 pub struct CustomClient {
 	cfg: CustomClientConfig,
 	sequence: u64,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum QueryMsg {
+	Balances {},
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub enum PostAppData {
+	Balances(Balances),
+	Error(String),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct Balances {
+	pub balances: Vec<(String, String)>,
 }
 
 impl CustomClient {

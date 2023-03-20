@@ -24,6 +24,9 @@ use avail_subxt::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use codec::Decode;
+use cosmrs::proto::cosmwasm::wasm::v1::{
+	query_client::QueryClient, QuerySmartContractStateRequest,
+};
 use kate_recovery::com::AppData;
 use num::{BigUint, FromPrimitive};
 use rand::{thread_rng, Rng};
@@ -31,10 +34,12 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use sp_keyring::AccountKeyring;
 use subxt::{tx::PairSigner, OnlineClient};
+use tonic::transport::Channel;
 use tracing::{debug, info};
 use warp::{http::StatusCode, Filter};
 
 use crate::{
+	custom,
 	data::{get_confidence_from_db, get_decoded_data_from_db},
 	types::{Mode, RuntimeConfig},
 };
@@ -89,6 +94,7 @@ where
 	T: Serialize,
 {
 	Normal(T),
+	BadRequest(T),
 	NotFound,
 	NotFinalized,
 	InProcess,
@@ -216,6 +222,41 @@ fn appdata(
 	res
 }
 
+async fn custom_post_appdata(
+	app_id: Option<u32>,
+	client: Arc<OnlineClient<AvailConfig>>,
+	query_client: Arc<Mutex<QueryClient<Channel>>>,
+	contract: String,
+	value: serde_json::Value,
+) -> Result<ClientResponse<custom::PostAppData>, Infallible> {
+	let query_data = serde_json::to_vec(&custom::QueryMsg::Balances {}).unwrap();
+	let request = QuerySmartContractStateRequest {
+		address: contract,
+		query_data,
+	};
+
+	let mut query_client = query_client.lock().unwrap().clone();
+	let query_response = query_client.smart_contract_state(request);
+	let response = query_response.await.unwrap().into_inner();
+
+	let balances: custom::Balances = serde_json::from_slice(&response.data).unwrap();
+	let transfer: custom::types::Transfer = serde_json::from_value(value.clone()).unwrap();
+
+	if let Some(balance) = balances.balances.iter().find(|b| b.0 == transfer.from) {
+		if usize::from_str(&balance.1).unwrap() < usize::from_str(&transfer.amount).unwrap() {
+			return Ok(ClientResponse::BadRequest(custom::PostAppData::Error(
+				"Not enough balance".to_string(),
+			)));
+		}
+	}
+
+	_ = post_appdata(app_id, client, value).await;
+
+	Ok(ClientResponse::Normal(custom::PostAppData::Balances(
+		balances,
+	)))
+}
+
 async fn post_appdata(
 	app_id: Option<u32>,
 	client: Arc<OnlineClient<AvailConfig>>,
@@ -243,6 +284,10 @@ impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 		match self {
 			ClientResponse::Normal(response) => {
 				warp::reply::with_status(warp::reply::json(&response), StatusCode::OK)
+					.into_response()
+			},
+			ClientResponse::BadRequest(response) => {
+				warp::reply::with_status(warp::reply::json(&response), StatusCode::BAD_REQUEST)
 					.into_response()
 			},
 			ClientResponse::NotFound => {
@@ -279,7 +324,6 @@ pub async fn run_server(
 	cfg: RuntimeConfig,
 	counter: Arc<Mutex<u32>>,
 	client: OnlineClient<AvailConfig>,
-	app_id: Option<u32>,
 ) {
 	let host = cfg.http_server_host.clone();
 	let port = if cfg.http_server_port.1 > 0 {
@@ -289,9 +333,11 @@ pub async fn run_server(
 	} else {
 		cfg.http_server_port.0
 	};
+	let app_id = cfg.app_id;
+	let node_host = cfg.node_host.clone();
+	let contract = cfg.contract.clone();
 
-	let get_mode =
-		warp::path!("v1" / "mode").map(move || warp::reply::json(&Mode::from(cfg.app_id)));
+	let get_mode = warp::path!("v1" / "mode").map(move || warp::reply::json(&Mode::from(app_id)));
 
 	let counter_clone = counter.clone();
 	let get_latest_block =
@@ -321,6 +367,7 @@ pub async fn run_server(
 		});
 
 	let cfg = cfg.clone();
+
 	let db = store.clone();
 	let counter_status = counter.clone();
 	let get_status = warp::path!("v1" / "status").map(move || {
@@ -329,11 +376,15 @@ pub async fn run_server(
 	});
 
 	let client = Arc::new(client);
+	// TODO: Hadnle errors from server
+	let query_client = Arc::new(Mutex::new(QueryClient::connect(node_host).await.unwrap()));
 	let post_appdata = warp::path!("v1" / "appdata")
 		.and(warp::body::json::<serde_json::Value>())
 		.and_then(move |value| {
 			let client = client.clone();
-			async move { post_appdata(app_id, client, value).await }
+			let query_client = query_client.clone();
+			let contract = contract.clone();
+			async move { custom_post_appdata(app_id, client, query_client, contract, value).await }
 		});
 
 	let cors = warp::cors()
