@@ -18,8 +18,10 @@ use cosmrs::{
 	tx::{Body, Fee, MessageExt, SignDoc, SignerInfo},
 	Coin,
 };
+use hex;
 use kate_recovery::com::AppData;
 use serde::{Deserialize, Serialize};
+use sp_core::hashing::sha2_256;
 use std::str::FromStr;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{error, info};
@@ -176,7 +178,13 @@ impl CustomClient {
 			.sign(&sender_private_key)
 			.map_err(|error| anyhow!("{error}"))?;
 
-		tx_signed.to_bytes().map_err(|error| anyhow!("{error}"))
+		tx_signed
+			.to_bytes()
+			.map(|bytes| {
+				info!("TXHASH: {}", hex::encode(sha2_256(&bytes)));
+				bytes
+			})
+			.map_err(|error| anyhow!("{error}"))
 	}
 
 	pub async fn run(
@@ -197,9 +205,9 @@ impl CustomClient {
 				Ok(tx_bytes) => {
 					let mode = BroadcastMode::Block.into();
 					let request = BroadcastTxRequest { tx_bytes, mode };
-
-					if let Err(error) = &client.broadcast_tx(request).await {
-						error!("{error}");
+					match &client.broadcast_tx(request).await {
+						Ok(response) => info!("Broadcast response: {response:?}"),
+						Err(error) => error!("{error}"),
 					}
 				},
 				Err(error) => error!("{error}"),
