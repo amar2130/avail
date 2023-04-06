@@ -18,28 +18,21 @@ use std::{
 use anyhow::{Context, Result};
 use avail_subxt::{
 	api::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall},
-	api::{self, runtime_types::sp_core::bounded::bounded_vec::BoundedVec},
-	primitives::{AppUncheckedExtrinsic, AvailExtrinsicParams},
-	AvailConfig,
+	primitives::AppUncheckedExtrinsic,
 };
 use base64::{engine::general_purpose, Engine as _};
 use codec::Decode;
-use cosmrs::proto::cosmwasm::wasm::v1::{
-	query_client::QueryClient, QuerySmartContractStateRequest,
-};
 use kate_recovery::com::AppData;
 use num::{BigUint, FromPrimitive};
 use rand::{thread_rng, Rng};
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
-use sp_keyring::AccountKeyring;
-use subxt::{tx::PairSigner, OnlineClient};
-use tonic::transport::Channel;
+use tokio::sync::Mutex as AsyncMutex;
 use tracing::{debug, info};
 use warp::{http::StatusCode, Filter};
 
 use crate::{
-	custom,
+	custom::{self, CustomClient},
 	data::{get_confidence_from_db, get_decoded_data_from_db},
 	types::{Mode, RuntimeConfig},
 };
@@ -94,7 +87,7 @@ where
 	T: Serialize,
 {
 	Normal(T),
-	BadRequest(T),
+	// BadRequest(T),
 	NotFound,
 	NotFinalized,
 	InProcess,
@@ -223,80 +216,65 @@ fn appdata(
 }
 
 async fn custom_get_state(
-	query_client: Arc<Mutex<QueryClient<Channel>>>,
-	contract: String,
+	custom_client: Arc<AsyncMutex<CustomClient>>,
 ) -> Result<ClientResponse<custom::Balances>, Infallible> {
-	let query_data = serde_json::to_vec(&custom::QueryMsg::Balances {}).unwrap();
-	let request = QuerySmartContractStateRequest {
-		address: contract,
-		query_data,
-	};
-
-	let mut query_client = query_client.lock().unwrap().clone();
-	let query_response = query_client.smart_contract_state(request);
-	let response = query_response.await.unwrap().into_inner();
-
-	let balances: custom::Balances = serde_json::from_slice(&response.data).unwrap();
-
+	let mut custom_client = custom_client.lock().await;
+	let balances: custom::Balances = custom_client.query_state().await.unwrap();
 	Ok(ClientResponse::Normal(balances))
 }
 
 async fn custom_post_appdata(
-	app_id: Option<u32>,
-	client: Arc<OnlineClient<AvailConfig>>,
-	query_client: Arc<Mutex<QueryClient<Channel>>>,
-	contract: String,
+	custom_client: Arc<AsyncMutex<CustomClient>>,
+	state: Arc<AsyncMutex<Vec<custom::types::Transfer>>>,
 	value: serde_json::Value,
 ) -> Result<ClientResponse<custom::PostAppData>, Infallible> {
-	let query_data = serde_json::to_vec(&custom::QueryMsg::Balances {}).unwrap();
-	let request = QuerySmartContractStateRequest {
-		address: contract,
-		query_data,
-	};
-
-	let mut query_client = query_client.lock().unwrap().clone();
-	let query_response = query_client.smart_contract_state(request);
-	let response = query_response.await.unwrap().into_inner();
-
-	let balances: custom::Balances = serde_json::from_slice(&response.data).unwrap();
 	let transfer: custom::types::Transfer = serde_json::from_value(value.clone()).unwrap();
 
-	if let Some(balance) = balances.balances.iter().find(|b| b.0 == transfer.from) {
-		if usize::from_str(&balance.1).unwrap() < usize::from_str(&transfer.amount).unwrap() {
-			return Ok(ClientResponse::BadRequest(custom::PostAppData::Error(
-				"Not enough balance".to_string(),
-			)));
-		}
-	}
+	let mut custom_client = custom_client.lock().await;
 
-	_ = post_appdata(app_id, client, value).await;
+	// TODO: Simulate should return "Not enough balance"
+	// let balances: custom::Balances = custom_client.query_state().await.unwrap();
+	// if let Some(balance) = balances.balances.iter().find(|b| b.0 == transfer.from) {
+	// 	if usize::from_str(&balance.1).unwrap() < usize::from_str(&transfer.amount).unwrap() {
+	// 		return Ok(ClientResponse::BadRequest(custom::PostAppData::Error(
+	// 			"Not enough balance".to_string(),
+	// 		)));
+	// 	}
+	// }
+
+	let mut state = state.lock().await;
+	state.push(transfer);
+	let transfers = state.clone().into_iter().collect();
+	let balances = custom_client.simulate(transfers).await.unwrap();
+
+	// TODO: Add block height to the response
 
 	Ok(ClientResponse::Normal(custom::PostAppData::Balances(
 		balances,
 	)))
 }
 
-async fn post_appdata(
-	app_id: Option<u32>,
-	client: Arc<OnlineClient<AvailConfig>>,
-	value: serde_json::Value,
-) -> Result<ClientResponse<serde_json::Value>, Infallible> {
-	let Some(app_id) = app_id else {
-	    return Ok(ClientResponse::Normal("Application is not configured".into()));
-	};
-	let signer = PairSigner::new(AccountKeyring::Alice.pair());
-	let data = value.to_string().into_bytes();
-	let data_transfer = api::tx().data_availability().submit_data(BoundedVec(data));
-	let extrinsic_params = AvailExtrinsicParams::new_with_app_id(app_id.into());
+// async fn post_appdata(
+// 	app_id: Option<u32>,
+// 	client: Arc<OnlineClient<AvailConfig>>,
+// 	value: serde_json::Value,
+// ) -> Result<ClientResponse<serde_json::Value>, Infallible> {
+// 	let Some(app_id) = app_id else {
+// 	    return Ok(ClientResponse::Normal("Application is not configured".into()));
+// 	};
+// 	let signer = PairSigner::new(AccountKeyring::Alice.pair());
+// 	let data = value.to_string().into_bytes();
+// 	let data_transfer = api::tx().data_availability().submit_data(BoundedVec(data));
+// 	let extrinsic_params = AvailExtrinsicParams::new_with_app_id(app_id.into());
 
-	client
-		.tx()
-		.sign_and_submit(&data_transfer, &signer, extrinsic_params)
-		.await
-		.unwrap();
+// 	client
+// 		.tx()
+// 		.sign_and_submit(&data_transfer, &signer, extrinsic_params)
+// 		.await
+// 		.unwrap();
 
-	Ok(ClientResponse::Normal(value))
-}
+// 	Ok(ClientResponse::Normal(value))
+// }
 
 impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 	fn into_response(self) -> warp::reply::Response {
@@ -305,10 +283,10 @@ impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {
 				warp::reply::with_status(warp::reply::json(&response), StatusCode::OK)
 					.into_response()
 			},
-			ClientResponse::BadRequest(response) => {
-				warp::reply::with_status(warp::reply::json(&response), StatusCode::BAD_REQUEST)
-					.into_response()
-			},
+			// ClientResponse::BadRequest(response) => {
+			// 	warp::reply::with_status(warp::reply::json(&response), StatusCode::BAD_REQUEST)
+			// 		.into_response()
+			// },
 			ClientResponse::NotFound => {
 				warp::reply::with_status(warp::reply::json(&"Not found"), StatusCode::NOT_FOUND)
 					.into_response()
@@ -342,7 +320,8 @@ pub async fn run_server(
 	store: Arc<DB>,
 	cfg: RuntimeConfig,
 	counter: Arc<Mutex<u32>>,
-	client: OnlineClient<AvailConfig>,
+	custom_client: Arc<AsyncMutex<CustomClient>>,
+	state: Arc<AsyncMutex<Vec<custom::types::Transfer>>>,
 ) {
 	let host = cfg.http_server_host.clone();
 	let port = if cfg.http_server_port.1 > 0 {
@@ -353,8 +332,6 @@ pub async fn run_server(
 		cfg.http_server_port.0
 	};
 	let app_id = cfg.app_id;
-	let node_host = cfg.node_host.clone();
-	let contract = cfg.contract.clone();
 
 	let get_mode = warp::path!("v1" / "mode").map(move || warp::reply::json(&Mode::from(app_id)));
 
@@ -394,24 +371,19 @@ pub async fn run_server(
 		status(&cfg, *counter_lock, db.clone())
 	});
 
-	let client = Arc::new(client);
-	// TODO: Handle errors from server
-	let query_client = Arc::new(Mutex::new(QueryClient::connect(node_host).await.unwrap()));
-	let query_client_post_appdata = query_client.clone();
-	let contract_post_appdata = contract.clone();
+	let post_appdata_custom_client = custom_client.clone();
 	let post_appdata = warp::path!("v1" / "appdata")
 		.and(warp::body::json::<serde_json::Value>())
 		.and_then(move |value| {
-			let client = client.clone();
-			let query_client = query_client_post_appdata.clone();
-			let contract = contract_post_appdata.to_owned();
-			async move { custom_post_appdata(app_id, client, query_client, contract, value).await }
+			let custom_client = post_appdata_custom_client.clone();
+			let state = state.clone();
+			async move { custom_post_appdata(custom_client, state, value).await }
 		});
 
+	let get_custom_state_custom_client = custom_client.clone();
 	let get_custom_state = warp::path!("v1" / "custom" / "state").and_then(move || {
-		let query_client = query_client.clone();
-		let contract = contract.clone();
-		async move { custom_get_state(query_client, contract).await }
+		let custom_client = get_custom_state_custom_client.clone();
+		async move { custom_get_state(custom_client).await }
 	});
 
 	let cors = warp::cors()

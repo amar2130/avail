@@ -7,7 +7,8 @@ use codec::Decode;
 use kate_recovery::com::AppData;
 use serde::Deserialize;
 
-pub fn decode_json_app_data<T: for<'a> Deserialize<'a>>(data: AppData) -> Result<Vec<T>> {
+#[allow(unused)]
+fn decode_json_app_data<T: for<'a> Deserialize<'a>>(data: AppData) -> Result<Vec<T>> {
 	let xts: Vec<AppUncheckedExtrinsic> = data
 		.iter()
 		.enumerate()

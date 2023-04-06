@@ -1,5 +1,4 @@
-use self::config::CustomClientConfig;
-use crate::toolkit;
+use self::{config::CustomClientConfig, types::Transfer};
 use anyhow::{anyhow, Context, Result};
 use bip39::Mnemonic;
 use cosmrs::{
@@ -8,22 +7,26 @@ use cosmrs::{
 	proto::{
 		cosmos::{
 			auth::v1beta1::{
-				query_client::QueryClient, BaseAccount, QueryAccountRequest, QueryAccountResponse,
+				query_client::QueryClient as AuthQueryClient, BaseAccount, QueryAccountRequest,
+				QueryAccountResponse,
 			},
-			tx::v1beta1::{service_client::ServiceClient, BroadcastMode, BroadcastTxRequest},
+			tx::v1beta1::{
+				service_client::ServiceClient, BroadcastMode, BroadcastTxRequest, SimulateRequest,
+			},
 		},
-		cosmwasm::wasm::v1::MsgExecuteContract,
+		cosmwasm::wasm::v1::{
+			query_client::QueryClient, MsgExecuteContract, QuerySmartContractStateRequest,
+		},
 		traits::Message,
 	},
 	tx::{Body, Fee, MessageExt, SignDoc, SignerInfo},
 	Coin,
 };
-use hex;
-use kate_recovery::com::AppData;
 use serde::{Deserialize, Serialize};
 use sp_core::hashing::sha2_256;
-use std::str::FromStr;
-use tokio::sync::mpsc::{Receiver, Sender};
+use std::{str::FromStr, sync::Arc, time::Duration};
+use tokio::{sync::Mutex as AsyncMutex, time};
+use tonic::transport::Channel;
 use tracing::{error, info};
 
 pub mod types {
@@ -95,6 +98,8 @@ fn sequence(response: QueryAccountResponse) -> Result<u64> {
 pub struct CustomClient {
 	cfg: CustomClientConfig,
 	sequence: u64,
+	service_client: ServiceClient<Channel>,
+	query_client: QueryClient<Channel>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -115,23 +120,47 @@ pub struct Balances {
 
 impl CustomClient {
 	pub async fn new(cfg: CustomClientConfig) -> Result<Self> {
-		let Ok(mut query_client) = QueryClient::connect(cfg.node_host.clone()).await else {
+		let Ok(service_client) = ServiceClient::connect(cfg.node_host.clone()).await else {
 		    return Err(anyhow!("Cannot connect to the cosmos node"));
 		};
 
+		let Ok(query_client) = QueryClient::connect(cfg.node_host.clone()).await else {
+		    return Err(anyhow!("Cannot connect to the cosmos node"));
+		};
+
+		let Ok(mut account_query_client) = AuthQueryClient::connect(cfg.node_host.clone()).await else {
+		    return Err(anyhow!("Cannot connect to the cosmos node"));
+		};
 		let sender_private_key = private_key(&cfg.sender_mnemonic, &cfg.sender_password)?;
 		let address = account_id(sender_private_key.public_key())?;
 
 		let request = QueryAccountRequest { address };
-		let response = query_client.account(request).await?;
+		let response = account_query_client.account(request).await?;
 		let sequence = sequence(response.into_inner())?;
 
-		info!("Sequence number: {sequence}");
+		info!("Current sequence number: {sequence}");
 
-		Ok(CustomClient { cfg, sequence })
+		Ok(CustomClient {
+			cfg,
+			sequence,
+			service_client,
+			query_client,
+		})
 	}
 
-	async fn process_block(&self, data: AppData) -> Result<Vec<u8>> {
+	pub async fn query_state(&mut self) -> Result<Balances> {
+		let query_data = serde_json::to_vec(&QueryMsg::Balances {}).unwrap();
+		let request = QuerySmartContractStateRequest {
+			address: self.cfg.contract.clone(),
+			query_data,
+		};
+
+		let query_response = self.query_client.smart_contract_state(request);
+		let response = query_response.await?.into_inner();
+		serde_json::from_slice(&response.data).map_err(|error| anyhow!("{error}"))
+	}
+
+	fn execute_transfers_tx(&self, transfers: Vec<Transfer>) -> Result<Vec<u8>> {
 		let CustomClientConfig {
 			chain_id,
 			contract,
@@ -140,8 +169,6 @@ impl CustomClient {
 			sender_account_number,
 			..
 		} = &self.cfg;
-
-		let transfers = toolkit::decode_json_app_data(data)?;
 
 		// NOTE: We cannot pass SigningKey to async fn due to missing Send marker
 		let sender_private_key = private_key(sender_mnemonic, sender_password)?;
@@ -187,32 +214,55 @@ impl CustomClient {
 			.map_err(|error| anyhow!("{error}"))
 	}
 
-	pub async fn run(
-		&mut self,
-		mut app_rx: Receiver<AppData>,
-		error_sender: Sender<anyhow::Error>,
-	) {
-		let Ok(mut client) = ServiceClient::connect(self.cfg.node_host.clone()).await else {
-		    let message = "Cannot connect to the cosmos node";
-		    if let Err(error) = error_sender.send(anyhow!(message)).await {
-			error!("Cannot send error message: {error}");
-		    }
-		    return;
-		};
+	pub async fn simulate(&mut self, transfers: Vec<Transfer>) -> Result<Balances> {
+		let tx_bytes = self.execute_transfers_tx(transfers)?;
+		#[allow(deprecated)]
+		let simulate_request = SimulateRequest { tx: None, tx_bytes };
+		let response = self.service_client.simulate(simulate_request).await?;
 
-		while let Some(block) = app_rx.recv().await {
-			match self.process_block(block).await {
-				Ok(tx_bytes) => {
-					let mode = BroadcastMode::Block.into();
-					let request = BroadcastTxRequest { tx_bytes, mode };
-					match &client.broadcast_tx(request).await {
-						Ok(response) => info!("Broadcast response: {response:?}"),
-						Err(error) => error!("{error}"),
-					}
-				},
-				Err(error) => error!("{error}"),
+		// TODO: Decode data properly (proto doesn't work)
+		let data = response.into_inner().result.context("No data found")?.data;
+		let data = String::from_utf8(data)?;
+		let data = if data.contains('-') {
+			*data.split('-').collect::<Vec<_>>().last().unwrap()
+		} else {
+			*data.split('.').collect::<Vec<_>>().last().unwrap()
+		};
+		let balances: Balances = serde_json::from_str(data)?;
+		Ok(balances)
+	}
+
+	pub async fn broadcast(&mut self, transfers: Vec<Transfer>) -> Result<()> {
+		let tx_bytes = self.execute_transfers_tx(transfers)?;
+		let mode = BroadcastMode::Block.into();
+		let request = BroadcastTxRequest { tx_bytes, mode };
+		self.service_client.broadcast_tx(request).await?;
+		self.sequence += 1;
+		Ok(())
+	}
+}
+
+pub struct CustomSequencer {
+	pub state: Arc<AsyncMutex<Vec<Transfer>>>,
+	pub custom_client: Arc<AsyncMutex<CustomClient>>,
+}
+
+impl CustomSequencer {
+	pub async fn run(&self) -> ! {
+		let mut interval = time::interval(Duration::from_secs(20));
+		loop {
+			interval.tick().await;
+			let mut state = self.state.lock().await;
+			let mut custom_client = self.custom_client.lock().await;
+
+			let transfers = state.drain(0..).collect::<Vec<_>>();
+			if let Err(error) = custom_client.broadcast(transfers.clone()).await {
+				error!("{error}");
 			}
-			self.sequence += 1;
+
+			// TODO: Submit to DA
+
+			info!("Sequence: {}", serde_json::json!(transfers));
 		}
 	}
 }

@@ -17,7 +17,10 @@ use prometheus_client::registry::Registry;
 use rand::{thread_rng, Rng};
 use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use structopt::StructOpt;
-use tokio::sync::mpsc::{channel, Sender};
+use tokio::sync::{
+	mpsc::{channel, Sender},
+	Mutex as AsyncMutex,
+};
 use tracing::{error, info, metadata::ParseLevelError, trace, warn, Level};
 use tracing_subscriber::{
 	fmt::format::{self, DefaultFields, Format, Full, Json},
@@ -166,11 +169,16 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 
 	// Spawn tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
+	let state: Arc<AsyncMutex<Vec<custom::types::Transfer>>> = Arc::new(AsyncMutex::new(vec![]));
+	let custom_client = Arc::new(AsyncMutex::new(
+		custom::CustomClient::new((&cfg).into()).await?,
+	));
 	tokio::task::spawn(http::run_server(
 		db.clone(),
 		cfg.clone(),
 		counter.clone(),
-		rpc_client.clone(),
+		custom_client.clone(),
+		state.clone(),
 	));
 
 	let (network_client, network_event_loop) = network::init(
@@ -244,7 +252,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		// communication channels being established for talking to
 		// libp2p backed application client
 		let (block_tx, block_rx) = channel::<types::BlockVerified>(128);
-		let (app_tx, app_rx) = channel::<AppData>(128);
+		let (_app_tx, _app_rx) = channel::<AppData>(128);
 
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
@@ -253,13 +261,18 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			rpc_client.clone(),
 			app_id,
 			block_rx,
-			app_tx,
+			_app_tx,
 			pp.clone(),
 		));
 
-		let error_sender = error_sender.clone();
-		let mut custom_client = custom::CustomClient::new((&cfg).into()).await?;
-		tokio::task::spawn(async move { custom_client.run(app_rx, error_sender).await });
+		// tokio::task::spawn(async move { custom_client.run(app_rx).await });
+
+		let state = state.clone();
+		let custom_sequencer = custom::CustomSequencer {
+			state,
+			custom_client,
+		};
+		tokio::task::spawn(async move { custom_sequencer.run().await });
 		Some(block_tx)
 	} else {
 		None
