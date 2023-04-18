@@ -252,7 +252,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		// communication channels being established for talking to
 		// libp2p backed application client
 		let (block_tx, block_rx) = channel::<types::BlockVerified>(128);
-		let (_app_tx, _app_rx) = channel::<AppData>(128);
+		let (app_tx, app_rx) = channel::<AppData>(128);
 
 		tokio::task::spawn(app_client::run(
 			(&cfg).into(),
@@ -261,16 +261,18 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			rpc_client.clone(),
 			app_id,
 			block_rx,
-			_app_tx,
+			app_tx,
 			pp.clone(),
 		));
 
-		// tokio::task::spawn(async move { custom_client.run(app_rx).await });
+		tokio::task::spawn(custom::run(app_rx));
 
 		let state = state.clone();
+		let da_client = rpc_client.clone();
 		let custom_sequencer = custom::CustomSequencer {
 			state,
 			custom_client,
+			da_client,
 		};
 		tokio::task::spawn(async move { custom_sequencer.run().await });
 		Some(block_tx)

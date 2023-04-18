@@ -22,10 +22,16 @@ use cosmrs::{
 	tx::{Body, Fee, MessageExt, SignDoc, SignerInfo},
 	Coin,
 };
+use kate_recovery::com::AppData;
 use serde::{Deserialize, Serialize};
 use sp_core::hashing::sha2_256;
+use sp_keyring::AccountKeyring;
 use std::{str::FromStr, sync::Arc, time::Duration};
-use tokio::{sync::Mutex as AsyncMutex, time};
+use subxt::OnlineClient;
+use tokio::{
+	sync::{mpsc::Receiver, Mutex as AsyncMutex},
+	time,
+};
 use tonic::transport::Channel;
 use tracing::{error, info};
 
@@ -116,6 +122,12 @@ pub enum PostAppData {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Balances {
 	pub balances: Vec<(String, String)>,
+}
+
+pub async fn run(mut app_receiver: Receiver<AppData>) {
+	while let Some(_app_data) = app_receiver.recv().await {
+		info!("App data received");
+	}
 }
 
 impl CustomClient {
@@ -245,24 +257,60 @@ impl CustomClient {
 pub struct CustomSequencer {
 	pub state: Arc<AsyncMutex<Vec<Transfer>>>,
 	pub custom_client: Arc<AsyncMutex<CustomClient>>,
+	pub da_client: OnlineClient<AvailConfig>,
 }
 
 impl CustomSequencer {
+	async fn broadcast(&self, transfers: Vec<Transfer>) -> Result<()> {
+		let mut custom_client = self.custom_client.lock().await;
+		custom_client.broadcast(transfers).await
+	}
+
+	async fn da_submit(&self, transfers: Vec<Transfer>) -> Result<()> {
+		let signer = PairSigner::new(AccountKeyring::Alice.pair());
+		let app_id = 1;
+
+		let da_client = self.da_client.clone();
+
+		let msg = serde_json::to_vec(&types::ExecuteTransfers::TransferBalance { transfers })?;
+
+		let data_transfer = api::tx()
+			.data_availability()
+			.submit_data(BoundedVec(msg.clone()));
+		let extrinsic_params = AvailExtrinsicParams::new_with_app_id(app_id.into());
+
+		let _ = da_client
+			.tx()
+			.sign_and_submit_then_watch(&data_transfer, &signer, extrinsic_params)
+			.await?
+			.wait_for_finalized_success()
+			.await?;
+
+		Ok(())
+	}
+
 	pub async fn run(&self) -> ! {
 		let mut interval = time::interval(Duration::from_secs(20));
 		loop {
 			interval.tick().await;
-			let mut state = self.state.lock().await;
-			let mut custom_client = self.custom_client.lock().await;
 
-			let transfers = state.drain(0..).collect::<Vec<_>>();
-			if let Err(error) = custom_client.broadcast(transfers.clone()).await {
+			let transfers = {
+				let mut state = self.state.lock().await;
+				let transfers = state.drain(0..).collect::<Vec<_>>();
+				if let Err(error) = self.broadcast(transfers.clone()).await {
+					error!("{error}");
+					continue;
+				};
+				info!("Transfers submitted to the node");
+				transfers
+			};
+
+			if let Err(error) = self.da_submit(transfers.clone()).await {
 				error!("{error}");
+				continue;
 			}
 
-			// TODO: Submit to DA
-
-			info!("Sequence: {}", serde_json::json!(transfers));
+			info!("Transfers submitted to DA");
 		}
 	}
 }
