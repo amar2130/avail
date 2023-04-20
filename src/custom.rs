@@ -1,5 +1,11 @@
 use self::{config::CustomClientConfig, types::Transfer};
 use anyhow::{anyhow, Context, Result};
+use avail_subxt::{
+	api::{self, runtime_types::sp_core::bounded::bounded_vec::BoundedVec},
+	avail::PairSigner,
+	primitives::AvailExtrinsicParams,
+	AvailConfig,
+};
 use bip39::Mnemonic;
 use cosmrs::{
 	bip32,
@@ -78,7 +84,7 @@ pub mod config {
 }
 
 // TODO:
-// - check balance on smart contract in cosmos
+// 1. check balance on smart contract in cosmos
 
 fn private_key(mnemonic: &str, password: &str) -> Result<SigningKey> {
 	let mnemonic = Mnemonic::parse(mnemonic)?;
@@ -115,19 +121,13 @@ pub enum QueryMsg {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum PostAppData {
-	Balances(Balances),
+	Balances((Balances, usize)),
 	Error(String),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Balances {
 	pub balances: Vec<(String, String)>,
-}
-
-pub async fn run(mut app_receiver: Receiver<AppData>) {
-	while let Some(_app_data) = app_receiver.recv().await {
-		info!("App data received");
-	}
 }
 
 impl CustomClient {
@@ -235,6 +235,7 @@ impl CustomClient {
 		// TODO: Decode data properly (proto doesn't work)
 		let data = response.into_inner().result.context("No data found")?.data;
 		let data = String::from_utf8(data)?;
+		info!("{data}");
 		let data = if data.contains('-') {
 			*data.split('-').collect::<Vec<_>>().last().unwrap()
 		} else {
@@ -258,6 +259,7 @@ pub struct CustomSequencer {
 	pub state: Arc<AsyncMutex<Vec<Transfer>>>,
 	pub custom_client: Arc<AsyncMutex<CustomClient>>,
 	pub da_client: OnlineClient<AvailConfig>,
+	pub app_id: u32,
 }
 
 impl CustomSequencer {
@@ -268,7 +270,6 @@ impl CustomSequencer {
 
 	async fn da_submit(&self, transfers: Vec<Transfer>) -> Result<()> {
 		let signer = PairSigner::new(AccountKeyring::Alice.pair());
-		let app_id = 1;
 
 		let da_client = self.da_client.clone();
 
@@ -277,7 +278,7 @@ impl CustomSequencer {
 		let data_transfer = api::tx()
 			.data_availability()
 			.submit_data(BoundedVec(msg.clone()));
-		let extrinsic_params = AvailExtrinsicParams::new_with_app_id(app_id.into());
+		let extrinsic_params = AvailExtrinsicParams::new_with_app_id(self.app_id.into());
 
 		let _ = da_client
 			.tx()
@@ -311,6 +312,23 @@ impl CustomSequencer {
 			}
 
 			info!("Transfers submitted to DA");
+		}
+	}
+}
+
+pub struct CustomFullNode {
+	pub height: Arc<AsyncMutex<usize>>,
+}
+
+impl CustomFullNode {
+	pub async fn run(&self, mut app_receiver: Receiver<AppData>) {
+		while let Some(app_data) = app_receiver.recv().await {
+			if !app_data.is_empty() {
+				info!("App data received");
+				info!("Transactions should be submitted to the full node");
+				let mut height = self.height.lock().await;
+				*height = height.saturating_add(1);
+			}
 		}
 	}
 }

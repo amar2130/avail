@@ -29,6 +29,7 @@ use tracing_subscriber::{
 
 use crate::{
 	consts::{APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF},
+	custom::CustomFullNode,
 	data::store_last_full_node_ws_in_db,
 	types::{Mode, RuntimeConfig},
 };
@@ -170,6 +171,8 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 	// Spawn tokio task which runs one http server for handling RPC
 	let counter = Arc::new(Mutex::new(0u32));
 	let state: Arc<AsyncMutex<Vec<custom::types::Transfer>>> = Arc::new(AsyncMutex::new(vec![]));
+	let height: Arc<AsyncMutex<usize>> = Arc::new(AsyncMutex::new(0));
+
 	let custom_client = Arc::new(AsyncMutex::new(
 		custom::CustomClient::new((&cfg).into()).await?,
 	));
@@ -179,6 +182,7 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 		counter.clone(),
 		custom_client.clone(),
 		state.clone(),
+		height.clone(),
 	));
 
 	let (network_client, network_event_loop) = network::init(
@@ -265,16 +269,17 @@ async fn run(error_sender: Sender<anyhow::Error>) -> Result<()> {
 			pp.clone(),
 		));
 
-		tokio::task::spawn(custom::run(app_rx));
-
-		let state = state.clone();
 		let da_client = rpc_client.clone();
 		let custom_sequencer = custom::CustomSequencer {
-			state,
+			state: state.clone(),
 			custom_client,
 			da_client,
+			app_id,
 		};
 		tokio::task::spawn(async move { custom_sequencer.run().await });
+
+		let custom_full_node = CustomFullNode { height };
+		tokio::task::spawn(async move { custom_full_node.run(app_rx).await });
 		Some(block_tx)
 	} else {
 		None

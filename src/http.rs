@@ -217,15 +217,18 @@ fn appdata(
 
 async fn custom_get_state(
 	custom_client: Arc<AsyncMutex<CustomClient>>,
-) -> Result<ClientResponse<custom::Balances>, Infallible> {
+	height: Arc<AsyncMutex<usize>>,
+) -> Result<ClientResponse<(custom::Balances, usize)>, Infallible> {
 	let mut custom_client = custom_client.lock().await;
 	let balances: custom::Balances = custom_client.query_state().await.unwrap();
-	Ok(ClientResponse::Normal(balances))
+	let height = height.lock().await;
+	Ok(ClientResponse::Normal((balances, *height)))
 }
 
 async fn custom_post_appdata(
 	custom_client: Arc<AsyncMutex<CustomClient>>,
 	state: Arc<AsyncMutex<Vec<custom::types::Transfer>>>,
+	height: Arc<AsyncMutex<usize>>,
 	value: serde_json::Value,
 ) -> Result<ClientResponse<custom::PostAppData>, Infallible> {
 	let transfer: custom::types::Transfer = serde_json::from_value(value.clone()).unwrap();
@@ -246,12 +249,11 @@ async fn custom_post_appdata(
 	state.push(transfer);
 	let transfers = state.clone().into_iter().collect();
 	let balances = custom_client.simulate(transfers).await.unwrap();
+	let height = height.lock().await;
 
-	// TODO: Add block height to the response
-
-	Ok(ClientResponse::Normal(custom::PostAppData::Balances(
-		balances,
-	)))
+	Ok(ClientResponse::Normal(custom::PostAppData::Balances((
+		balances, *height,
+	))))
 }
 
 // async fn post_appdata(
@@ -322,6 +324,7 @@ pub async fn run_server(
 	counter: Arc<Mutex<u32>>,
 	custom_client: Arc<AsyncMutex<CustomClient>>,
 	state: Arc<AsyncMutex<Vec<custom::types::Transfer>>>,
+	height: Arc<AsyncMutex<usize>>,
 ) {
 	let host = cfg.http_server_host.clone();
 	let port = if cfg.http_server_port.1 > 0 {
@@ -372,18 +375,22 @@ pub async fn run_server(
 	});
 
 	let post_appdata_custom_client = custom_client.clone();
+	let post_appdata_height = height.clone();
 	let post_appdata = warp::path!("v1" / "appdata")
 		.and(warp::body::json::<serde_json::Value>())
 		.and_then(move |value| {
 			let custom_client = post_appdata_custom_client.clone();
 			let state = state.clone();
-			async move { custom_post_appdata(custom_client, state, value).await }
+			let height = post_appdata_height.clone();
+			async move { custom_post_appdata(custom_client, state, height, value).await }
 		});
 
 	let get_custom_state_custom_client = custom_client.clone();
+	let get_custom_state_height = height.clone();
 	let get_custom_state = warp::path!("v1" / "custom" / "state").and_then(move || {
 		let custom_client = get_custom_state_custom_client.clone();
-		async move { custom_get_state(custom_client).await }
+		let height = get_custom_state_height.clone();
+		async move { custom_get_state(custom_client, height).await }
 	});
 
 	let cors = warp::cors()
