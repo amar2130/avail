@@ -570,7 +570,7 @@ impl EventLoop {
 			} => {
 				let mut ids: HashMap<QueryId, Option<Result<()>>> = Default::default();
 
-				for record in records {
+				for record in records.as_ref() {
 					let query_id = self
 						.swarm
 						.behaviour_mut()
