@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title></title>
+
+    <link rel="stylesheet" href="style.css" />
+    <script>
+      let height = 0;
+      const host = "http://localhost:7000/v1/";
+      const host_appdata = host + "appdata";
+      const host_state = host + "custom/state";
+
+      function transfer(accounts, amount) {
+        switch (accounts) {
+          case "sonic-to-tails":
+            return { from: "sonic", to: "tails", amount: amount };
+          case "tails-to-sonic":
+            return { from: "tails", to: "sonic", amount: amount };
+          default:
+            throw "invalid accounts";
+        }
+      }
+
+      function accountsValue() {
+        return document.getElementById("accounts").selectedOptions[0].value;
+      }
+
+      function amountValue() {
+        return document.getElementById("amount").selectedOptions[0].value;
+      }
+
+      function setStatus(status) {
+        let statusLabel = document.getElementById("status");
+        statusLabel.innerHTML = status;
+        statusLabel.classList.remove("hidden");
+        setTimeout(() => hideStatus(), 1000);
+      }
+
+      function hideStatus() {
+        let statusLabel = document.getElementById("status");
+        if (!statusLabel.classList.contains("hidden")) {
+          statusLabel.classList.add("hidden");
+        }
+      }
+
+      function setState(state) {
+        let stateLabel = document.getElementById("state");
+        stateLabel.innerHTML = state;
+      }
+
+      function postTransfer(transfer) {
+        return fetch(host_appdata, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(transfer),
+        });
+      }
+
+      function getState() {
+        return fetch(host_state);
+      }
+
+      function getName(value) {
+        switch (value) {
+          case "sonic":
+            return "Sonic";
+          case "tails":
+            return "Tails";
+          default:
+            throw "invalid name";
+        }
+      }
+
+      function setInProgress() {
+        document.getElementById("transfer").classList.add("progress");
+      }
+
+      function setFinal() {
+        document.getElementById("transfer").classList.remove("progress");
+      }
+
+      window.addEventListener("DOMContentLoaded", (event) => {
+        getState()
+          .then((result) => result.json())
+          .then((json) => {
+            setState(
+              json[0].balances
+                .map(([name, value]) => `${getName(name)}: $${value}`)
+                .join(", ")
+            );
+          });
+
+        setInterval(() => {
+          getState()
+            .then((result) => result.json())
+            .then((json) => {
+              console.log(json[1]);
+              console.log(height);
+              if (json[1] > height + 1) {
+                setFinal();
+              }
+            });
+        }, 1000);
+
+        const button = document.getElementById("transfer");
+
+        button.addEventListener("click", (event) => {
+          let data = transfer(accountsValue(), amountValue());
+          postTransfer(data)
+            .then((response) => {
+              setInProgress();
+              return response.json();
+            })
+            .then((json) => {
+              if (json.Error) {
+                setStatus(json.Error);
+              } else {
+                setStatus("Transaction posted");
+                setState(
+                  json.Balances[0].balances
+                    .map(([name, value]) => `${getName(name)}: $${value}`)
+                    .join(", ")
+                );
+                height = json.Balances[1];
+              }
+            });
+        });
+      });
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <div class="box">
+      <h2>Balance Transfer App</h2>
+      <form>
+        <div class="select-box">
+          <!-- <label for="accounts">Transfer:</label> -->
+          <select name="accounts" id="accounts">
+            <option value="sonic-to-tails">Sonic to Tails</option>
+            <option value="tails-to-sonic">Tails to Sonic</option>
+          </select>
+        </div>
+        <div class="select-box">
+          <!-- <label for="amount">Amount:</label> -->
+          <select name="amount" id="amount">
+            <option value="1">$1</option>
+            <option value="2">$2</option>
+            <option value="5">$5</option>
+            <option value="10">$10</option>
+            <option value="100">$100</option>
+            <option value="1000">$1000</option>
+          </select>
+        </div>
+        <div>
+          <a href="#" id="transfer">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            Transfer
+          </a>
+        </div>
+        <div class="state">
+          <span>State: <label id="state"></label></span>
+        </div>
+        <div>
+          <label id="status">&nbsp;</label>
+        </div>
+      </form>
+    </div>
+  </body>
+</html>
