@@ -1,8 +1,11 @@
-use super::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
+pub mod types;
+use crate::types::State;
+
+use self::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
 use crate::{
-	api::v1::types::{Extrinsics, ExtrinsicsDataResponse},
+	api::common::types::{Extrinsics, ExtrinsicsDataResponse},
 	data::{get_confidence_from_db, get_decoded_data_from_db},
-	types::{Mode, State},
+	types::Mode,
 	utils::calculate_confidence,
 };
 use anyhow::{Context, Result};
@@ -17,7 +20,7 @@ use rocksdb::DB;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info};
 
-fn serialised_confidence(block: u32, factor: f64) -> Option<String> {
+pub fn serialised_confidence(block: u32, factor: f64) -> Option<String> {
 	let block_big: BigUint = FromPrimitive::from_u64(block as u64)?;
 	let factor_big: BigUint = FromPrimitive::from_u64((10f64.powi(7) * factor) as u64)?;
 	let shifted: BigUint = block_big << 32 | factor_big;

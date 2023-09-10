@@ -1,15 +1,13 @@
 use crate::types::State;
 
-use self::types::AppDataQuery;
+use crate::api::common;
+use crate::api::common::types::AppDataQuery;
 use rocksdb::DB;
 use std::{
 	convert::Infallible,
 	sync::{Arc, Mutex},
 };
 use warp::{Filter, Rejection, Reply};
-
-mod handlers;
-mod types;
 
 fn with_state(
 	state: Arc<Mutex<State>>,
@@ -34,29 +32,29 @@ pub fn routes(
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 	let mode = warp::path!("v1" / "mode")
 		.and(with_app_id(app_id))
-		.map(handlers::mode);
+		.map(common::mode);
 
 	let latest_block = warp::path!("v1" / "latest_block")
 		.and(with_state(state.clone()))
-		.map(handlers::latest_block);
+		.map(common::latest_block);
 
 	let confidence = warp::path!("v1" / "confidence" / u32)
 		.and(with_db(db.clone()))
 		.and(with_state(state.clone()))
-		.map(handlers::confidence);
+		.map(common::confidence);
 
 	let appdata = (warp::path!("v1" / "appdata" / u32))
 		.and(warp::query::<AppDataQuery>())
 		.and(with_db(db.clone()))
 		.and(with_app_id(app_id))
 		.and(with_state(state.clone()))
-		.map(handlers::appdata);
+		.map(common::appdata);
 
 	let status = warp::path!("v1" / "status")
 		.and(with_app_id(app_id))
 		.and(with_state(state))
 		.and(with_db(db))
-		.map(handlers::status);
+		.map(common::status);
 
 	warp::get().and(mode.or(latest_block).or(confidence).or(appdata).or(status))
 }
