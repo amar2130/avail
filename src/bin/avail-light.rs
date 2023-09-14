@@ -2,17 +2,11 @@
 
 use anyhow::{anyhow, Context, Result};
 use avail_light::light_client_commons::run;
-use avail_light::types::RuntimeConfig;
 use clap::Parser;
-use rocksdb::DB;
-use std::{
-	ffi::CString,
-	ptr::{self},
-	sync::{Arc, Mutex},
-};
-
 use tokio::sync::mpsc::channel;
 use tracing::error;
+
+use avail_light::types::RuntimeConfig;
 
 #[cfg(feature = "network-analysis")]
 use avail_light::network::network_analyzer;

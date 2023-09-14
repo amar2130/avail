@@ -2,12 +2,13 @@ pub mod types;
 use crate::types::State;
 
 use self::types::{AppDataQuery, ClientResponse, ConfidenceResponse, LatestBlockResponse, Status};
+use self::types::{Extrinsics, ExtrinsicsDataResponse};
 use crate::{
-	api::common::types::{Extrinsics, ExtrinsicsDataResponse},
 	data::{get_confidence_from_db, get_decoded_data_from_db},
 	types::Mode,
 	utils::calculate_confidence,
 };
+
 use anyhow::{Context, Result};
 use avail_subxt::{
 	api::runtime_types::{da_control::pallet::Call, da_runtime::RuntimeCall},

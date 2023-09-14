@@ -1,7 +1,8 @@
+pub mod common;
+pub mod ffi;
 use crate::types::State;
 
-use crate::api::common;
-use crate::api::common::types::AppDataQuery;
+use crate::api::v1::common::types::AppDataQuery;
 use rocksdb::DB;
 use std::{
 	convert::Infallible,

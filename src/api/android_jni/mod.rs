@@ -3,16 +3,14 @@ use rocksdb::DB;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::channel;
 
-use crate::api::common;
-use crate::api::common::types::{
-	ClientResponse, ExtrinsicsDataResponse, FfiSafeAppDataQuery, LatestBlockResponse,
-};
-use crate::api::embed::{c_appdata, c_confidence, c_latest_block, c_mode, c_status};
+use crate::api::v1::common::types::{ClientResponse, ExtrinsicsDataResponse, LatestBlockResponse};
+use crate::api::v1::ffi::types::{FfiSafeAppDataQuery, FfiSafeConfidenceResponse, FfiSafeStatus};
+use crate::api::v1::ffi::{c_appdata, c_confidence, c_latest_block, c_mode, c_status};
 use crate::light_client_commons::run;
 use crate::types::{Mode, RuntimeConfig, State};
 use tracing::error;
 
-use crate::api::embed::EmbedState;
+use crate::api::v1::ffi::EmbedState;
 static mut STATE: Option<Arc<Mutex<State>>> = None;
 static mut DB: Option<Arc<DB>> = None;
 
@@ -41,7 +39,7 @@ pub async unsafe extern "C" fn start_light_node(cfg: RuntimeConfig) -> Result<bo
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn android_block_confidence(
 	block_number: u32,
-) -> ClientResponse<common::types::FfiSafeConfidenceResponse> {
+) -> ClientResponse<FfiSafeConfidenceResponse> {
 	if STATE.is_some() && DB.is_some() {
 		let embed_state: EmbedState = EmbedState::new(STATE.clone().unwrap(), DB.clone().unwrap());
 		return c_confidence(block_number, &embed_state);
@@ -52,9 +50,7 @@ pub unsafe extern "C" fn android_block_confidence(
 
 #[cfg(target_os = "android")]
 #[allow(non_snake_case)]
-pub unsafe extern "C" fn android_status(
-	app_id: u32,
-) -> ClientResponse<common::types::FfiSafeStatus> {
+pub unsafe extern "C" fn android_status(app_id: u32) -> ClientResponse<FfiSafeStatus> {
 	if STATE.is_some() && DB.is_some() {
 		let embed_state: EmbedState = EmbedState::new(STATE.clone().unwrap(), DB.clone().unwrap());
 		return c_status(app_id, &embed_state);

@@ -1,11 +1,12 @@
+pub mod types;
 use crate::types::{Mode, State};
 
 use super::common::types::{
-	ClientResponse, ConfidenceResponse, ExtrinsicsDataResponse, FfiSafeAppDataQuery,
-	FfiSafeConfidenceResponse, FfiSafeStatus, LatestBlockResponse,
+	ClientResponse, ConfidenceResponse, ExtrinsicsDataResponse, LatestBlockResponse,
 };
-use crate::api::common;
-use crate::api::common::types::AppDataQuery;
+use crate::api::v1::common;
+use crate::api::v1::common::types::AppDataQuery;
+use crate::api::v1::ffi::types::{FfiSafeAppDataQuery, FfiSafeConfidenceResponse, FfiSafeStatus};
 use rocksdb::DB;
 use std::{
 	ffi::CString,
@@ -55,7 +56,7 @@ pub extern "C" fn c_mode(app_id: u32) -> ClientResponse<Mode> {
 pub extern "C" fn c_confidence(
 	block_number: u32,
 	embed_state: *const EmbedState,
-) -> ClientResponse<common::types::FfiSafeConfidenceResponse> {
+) -> ClientResponse<FfiSafeConfidenceResponse> {
 	let db: Arc<DB> = get_db(embed_state);
 	let state: Arc<Mutex<State>> = get_state(embed_state);
 
