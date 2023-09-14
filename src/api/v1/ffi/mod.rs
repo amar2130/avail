@@ -18,9 +18,6 @@ pub struct EmbedState {
 	state: Arc<Mutex<State>>,
 }
 impl EmbedState {
-	pub fn new(state: Arc<Mutex<State>>, db: Arc<DB>) -> Self {
-		return Self { state, db };
-	}
 	pub fn from_ptr(embed_state: *const EmbedState) -> &'static mut EmbedState {
 		let r = unsafe {
 			let mut p = ptr::NonNull::new(embed_state as *mut EmbedState).unwrap();
