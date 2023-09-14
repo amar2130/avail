@@ -31,7 +31,8 @@ use tracing_subscriber::{
 	fmt::format::{self, DefaultFields, Format, Full, Json},
 	FmtSubscriber,
 };
-
+pub static mut STATE: Option<Arc<Mutex<State>>> = None;
+pub static mut DB: Option<Arc<DB>> = None;
 pub fn init_db(path: &str) -> Result<Arc<DB>> {
 	let mut confidence_cf_opts = Options::default();
 	confidence_cf_opts.set_max_write_buffer_number(16);
@@ -248,6 +249,11 @@ pub async fn run(
 	let state = Arc::new(Mutex::new(State::default()));
 	state.lock().unwrap().latest = block_header.number;
 	let sync_end_block = block_header.number - 1;
+	unsafe {
+		STATE = Some(state.clone());
+		DB = Some(db.clone());
+	}
+
 	if need_server {
 		// Spawn tokio task which runs one http server for handling RPC
 		let server: Server = super::api::server::Server {

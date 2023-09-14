@@ -11,8 +11,7 @@ use crate::types::{Mode, RuntimeConfig, State};
 use tracing::error;
 
 use crate::api::v1::ffi::EmbedState;
-static mut STATE: Option<Arc<Mutex<State>>> = None;
-static mut DB: Option<Arc<DB>> = None;
+use crate::light_client_commons::{DB, STATE};
 
 #[cfg(target_os = "android")]
 #[allow(non_snake_case)]
