@@ -1,7 +1,10 @@
+use std::ffi::CString;
+
 use avail_subxt::primitives::AppUncheckedExtrinsic;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 
+#[repr(C)]
 #[derive(Debug)]
 pub enum ClientResponse<T>
 where
@@ -14,31 +17,39 @@ where
 	Error(anyhow::Error),
 }
 
+#[repr(C)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConfidenceResponse {
 	pub block: u32,
 	pub confidence: f64,
 	pub serialised_confidence: Option<String>,
 }
-
+#[repr(C)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FfiSafeConfidenceResponse {
+	pub block: u32,
+	pub confidence: f64,
+	pub serialised_confidence: CString,
+}
+#[repr(C)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum Extrinsics {
 	Encoded(Vec<AppUncheckedExtrinsic>),
 	Decoded(Vec<String>),
 }
-
+#[repr(C)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ExtrinsicsDataResponse {
 	pub block: u32,
 	pub extrinsics: Extrinsics,
 }
-
+#[repr(C)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LatestBlockResponse {
 	pub latest_block: u32,
 }
-
+#[repr(C)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Status {
 	pub block_num: u32,
@@ -46,9 +57,23 @@ pub struct Status {
 	pub app_id: Option<u32>,
 }
 
+#[repr(C)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FfiSafeStatus {
+	pub block_num: u32,
+	pub confidence: f64,
+	pub app_id: u32,
+}
+#[repr(C)]
 #[derive(Deserialize, Serialize)]
 pub struct AppDataQuery {
 	pub decode: Option<bool>,
+}
+
+#[repr(C)]
+#[derive(Deserialize, Serialize)]
+pub struct FfiSafeAppDataQuery {
+	pub decode: bool,
 }
 
 impl<T: Send + Serialize> warp::Reply for ClientResponse<T> {

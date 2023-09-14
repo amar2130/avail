@@ -73,6 +73,7 @@ impl TryFrom<DaHeader> for BlockVerified {
 ///
 /// * `LightClient` - light client is running
 /// * `AppClient` - app client is running alongside the light client
+#[repr(C)]
 #[derive(Serialize, Clone)]
 pub enum Mode {
 	LightClient,
@@ -182,6 +183,7 @@ pub enum SecretKey {
 }
 
 /// Representation of a configuration used by this project.
+#[repr(C)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct RuntimeConfig {
