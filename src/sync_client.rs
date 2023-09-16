@@ -259,7 +259,7 @@ pub async fn run(
 	block_verified_sender: Option<Sender<BlockVerified>>,
 	state: Arc<Mutex<State>>,
 ) {
-	if start_block >= end_block {
+	if start_block > end_block {
 		warn!("There are no blocks to sync from {start_block} to {end_block}");
 		return;
 	}
