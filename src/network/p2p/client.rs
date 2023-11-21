@@ -504,12 +504,12 @@ impl Client {
 
 	pub async fn bootstrap_on_startup(&self, nodes: Vec<(PeerId, Multiaddr)>) -> Result<()> {
 		for (peer, addr) in nodes {
-			self.dial_peer(peer, addr.clone())
-				.await
-				.context("Dialing Bootstrap peer failed.")?;
+			// self.dial_peer(peer, addr.clone())
+			// 	.await
+			// 	.context("Dialing Bootstrap peer failed.")?;
 			self.add_address(peer, addr.clone()).await?;
 
-			self.add_autonat_server(peer, autonat_address(addr)).await?;
+			// self.add_autonat_server(peer, autonat_address(addr)).await?;
 		}
 		self.bootstrap().await
 	}
