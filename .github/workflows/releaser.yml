@@ -1,14 +1,10 @@
 name: Releaser
 on:
   push:
-    branches-ignore:
-      - '**'
-    tags:
-      - 'v*.*.*'
-      - 'v*.*.*-*'
+    branches:
+      - 'docker'
 
 jobs:
-
   binary_linux_amd64:
     runs-on: ubuntu-latest
     steps:
@@ -30,7 +26,7 @@ jobs:
              path: target/maxperf/avail-light-linux-amd64.tar.gz
              
   binary_linux_aarch64:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
          - uses: actions/checkout@v2
          - name: install cargo deps and build avail
@@ -91,33 +87,33 @@ jobs:
               path: target/maxperf/avail-light-apple-x86_64.tar.gz
 
   # can extend binary publish 'needs' to include more releases i.e. arm64 in future
-  binary_publish:
-    needs: [binary_linux_amd64, binary_linux_aarch64, binary_apple_arm64, binary_apple_x86_64]
-    runs-on: ubuntu-latest
-    steps:
-         - uses: actions/download-artifact@v2
-           with:
-             name: avail-light-linux-amd64-binary
-         - uses: actions/download-artifact@v2
-           with:
-             name: avail-light-linux-aarch64-binary
-         - uses: actions/download-artifact@v2
-           with:
-             name: avail-light-apple-arm64-binary
-         - uses: actions/download-artifact@v2
-           with:
-             name: avail-light-apple-x86_64-binary
-         - name: Prepare
-           id: prepare
-           run: |
-               TAG=${GITHUB_REF#refs/tags/}
-               echo ::set-output name=tag_name::${TAG}
-         - name: publish binaries
-           uses: svenstaro/upload-release-action@v2
-           with:
-             repo_token: ${{ secrets.PAT_TOKEN }}
-             file: /home/runner/work/avail-light/avail-light/avail-light*
-             release_name: ${{ steps.prepare.outputs.tag_name }}
-             tag: ${{ steps.prepare.outputs.tag_name }}
-             overwrite: true
-             file_glob: true
+  # binary_publish:
+  #   needs: [binary_linux_amd64, binary_linux_aarch64, binary_apple_arm64, binary_apple_x86_64]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #        - uses: actions/download-artifact@v2
+  #          with:
+  #            name: avail-light-linux-amd64-binary
+  #        - uses: actions/download-artifact@v2
+  #          with:
+  #            name: avail-light-linux-aarch64-binary
+  #        - uses: actions/download-artifact@v2
+  #          with:
+  #            name: avail-light-apple-arm64-binary
+  #        - uses: actions/download-artifact@v2
+  #          with:
+  #            name: avail-light-apple-x86_64-binary
+  #        - name: Prepare
+  #          id: prepare
+  #          run: |
+  #              TAG=${GITHUB_REF#refs/tags/}
+  #              echo ::set-output name=tag_name::${TAG}
+  #        - name: publish binaries
+  #          uses: svenstaro/upload-release-action@v2
+  #          with:
+  #            repo_token: ${{ secrets.PAT_TOKEN }}
+  #            file: /home/runner/work/avail-light/avail-light/avail-light*
+  #            release_name: ${{ steps.prepare.outputs.tag_name }}
+  #            tag: ${{ steps.prepare.outputs.tag_name }}
+  #            overwrite: true
+  #            file_glob: true
