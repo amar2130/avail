@@ -348,13 +348,13 @@ impl EventLoop {
 			},
 			SwarmEvent::Behaviour(BehaviourEvent::AutoNat(event)) => match event {
 				autonat::Event::InboundProbe(e) => {
-					trace!("AutoNat Inbound Probe: {:#?}", e);
+					info!("AutoNat Inbound Probe: {:#?}", e);
 				},
 				autonat::Event::OutboundProbe(e) => {
-					trace!("AutoNat Outbound Probe: {:#?}", e);
+					info!("AutoNat Outbound Probe: {:#?}", e);
 				},
 				autonat::Event::StatusChanged { old, new } => {
-					debug!(
+					info!(
 						"AutoNat Old status: {:#?}. AutoNat New status: {:#?}",
 						old, new
 					);
