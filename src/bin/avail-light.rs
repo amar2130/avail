@@ -252,7 +252,7 @@ async fn run(error_sender: Sender<Report>) -> Result<()> {
 		.await?;
 
 	state.lock().unwrap().latest = block_header.number;
-	let sync_range = cfg.sync_range(block_header.number);
+	let sync_range = cfg.sync_range(block_header.number + 1);
 
 	let ws_clients = api::v2::types::WsClients::default();
 

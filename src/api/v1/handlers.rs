@@ -93,7 +93,7 @@ pub fn latest_block(state: Arc<Mutex<State>>) -> ClientResponse<LatestBlockRespo
 	info!("Got request for latest block");
 	let state = state.lock().unwrap();
 	match state.confidence_achieved.last() {
-		None => ClientResponse::NotFound,
+		None => {info!("Dump conf_achieved: {:?}",state.confidence_achieved);ClientResponse::NotFound},
 		Some(latest_block) => ClientResponse::Normal(LatestBlockResponse { latest_block }),
 	}
 }

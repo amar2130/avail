@@ -788,7 +788,7 @@ impl IdentityConfig {
 	}
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BlockRange {
 	pub first: u32,
 	pub last: u32,
