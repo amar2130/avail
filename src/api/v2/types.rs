@@ -520,6 +520,7 @@ pub struct DataMessage {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DataTransaction {
+	hash: H256,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	data: Option<Base64>,
 	#[serde(skip_serializing_if = "Option::is_none")]
@@ -531,6 +532,7 @@ impl TryFrom<Vec<u8>> for DataTransaction {
 
 	fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
 		Ok(DataTransaction {
+			hash: H256::from(blake2_256(&value)),
 			data: decode_app_data(&value)?.map(Base64),
 			extrinsic: Some(Base64(value)),
 		})
@@ -873,6 +875,7 @@ mod tests {
 		PublishMessage::DataVerified(DataMessage {
 			block_number: 1,
 			data_transactions: vec![DataTransaction {
+				hash: H256::zero(),
 				data: transaction_data(),
 				extrinsic: transaction_data(),
 			}],

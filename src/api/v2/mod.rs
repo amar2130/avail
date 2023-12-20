@@ -581,7 +581,7 @@ mod tests {
 		assert_eq!(response.status(), StatusCode::OK);
 		assert_eq!(
 			response.body(),
-			r#"{"block_number":5,"data_transactions":[{"data":"dGVzdAo=","extrinsic":"vQGEANQ1k8cV/dMcYRQavQSpn9aCLIVYhUzN45pWhOelbaJ9ATIMK7ATKhdJRt/GtGciPPa4MYxxrurlX0cSXJ65qIx+DL+cMuoIBESJBZxe0QepaT4/AXr9w3Ct7xVJo/BqbYMABAAEHQEUdGVzdAo="}]}"#
+			r#"{"block_number":5,"data_transactions":[{"hash":"0x2cc86c8e42a3f0cfb45c2e8b48e3be2a73aa7f9439cfe4cf95725e9f7cb71007","data":"dGVzdAo=","extrinsic":"vQGEANQ1k8cV/dMcYRQavQSpn9aCLIVYhUzN45pWhOelbaJ9ATIMK7ATKhdJRt/GtGciPPa4MYxxrurlX0cSXJ65qIx+DL+cMuoIBESJBZxe0QepaT4/AXr9w3Ct7xVJo/BqbYMABAAEHQEUdGVzdAo="}]}"#
 		);
 	}
 
