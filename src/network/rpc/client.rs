@@ -9,12 +9,17 @@ use avail_subxt::{
 	utils::H256,
 	AvailConfig,
 };
+use codec::{Decode, Encode};
 use color_eyre::{
 	eyre::{eyre, WrapErr},
 	Report, Result,
 };
 use kate_recovery::{data::Cell, matrix::Position};
-use sp_core::ed25519::{self, Public};
+use serde::{Deserialize, Serialize};
+use sp_core::{
+	blake2_256,
+	ed25519::{self, Public},
+};
 use subxt::{
 	rpc::{types::BlockNumber, RpcParams},
 	storage::StorageKey,
@@ -23,6 +28,7 @@ use subxt::{
 	OnlineClient,
 };
 use tokio::sync::oneshot;
+use tracing::info;
 
 use super::{Command, CommandSender, SendableCommand, WrappedProof, CELL_WITH_PROOF_SIZE};
 use crate::types::RuntimeVersion;
@@ -202,6 +208,68 @@ impl Command for RequestKateProof {
 			_ = sender.send(Err(error));
 		}
 	}
+}
+
+struct RequestKateInclusionProof {
+	transaction_index: u32,
+	block_hash: H256,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataProof {
+	pub root: H256,
+	pub proof: Vec<H256>,
+	#[codec(compact)]
+	pub number_of_leaves: u32,
+	#[codec(compact)]
+	pub leaf_index: u32,
+	pub leaf: H256,
+}
+
+fn verify(data_proof: &DataProof) -> bool {
+	let acc = (data_proof.leaf, data_proof.leaf_index);
+	let (root, _) = data_proof.proof.iter().fold(acc, |(hash, index), proof| {
+		(hash_pair(&hash, proof, index), index / 2)
+	});
+
+	root == data_proof.root
+}
+
+fn hash_pair(leaf_hash: &H256, proof_item: &H256, index: u32) -> H256 {
+	let (left, right) = if index % 2 == 0 {
+		(leaf_hash, proof_item)
+	} else {
+		(proof_item, leaf_hash)
+	};
+	H256::from(blake2_256(&[left.as_bytes(), right.as_bytes()].concat()))
+}
+
+#[async_trait]
+impl Command for RequestKateInclusionProof {
+	async fn run(&mut self, client: &avail_subxt::avail::Client) -> Result<()> {
+		let mut params = RpcParams::new();
+		params.push(self.transaction_index)?;
+		params.push(self.block_hash)?;
+
+		let proof: DataProof = match client
+			.rpc()
+			.request("kate_queryInclusionProof", params)
+			.await
+		{
+			Ok(proof) => proof,
+			Err(error) => {
+				info!("Error: {error:?}");
+				return Err(error.into());
+			},
+		};
+		let verified = verify(&proof);
+		info!("Proof: {proof:?}, verified: {verified}");
+
+		Ok(())
+	}
+
+	fn abort(&mut self, _error: Report) {}
 }
 
 struct GetSystemVersion {
@@ -780,5 +848,20 @@ impl Client {
 			})
 		})
 		.await
+	}
+
+	pub async fn query_inclusion_proof(
+		&self,
+		block_number: u32,
+		transaction_index: u32,
+	) -> Result<()> {
+		let block_hash = self.get_block_hash(block_number).await?;
+
+		let command = Box::new(RequestKateInclusionProof {
+			transaction_index,
+			block_hash,
+		});
+		let _ = self.command_sender.send(command).await;
+		Ok(())
 	}
 }
