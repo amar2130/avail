@@ -22,8 +22,8 @@ use color_eyre::{
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use kate_recovery::{
 	com::{
-		app_specific_rows, columns_positions, decode_app_extrinsics, reconstruct_columns, AppData,
-		Percent,
+		app_specific_cells, app_specific_rows, columns_positions, decode_app_extrinsics,
+		reconstruct_columns, AppData, Percent,
 	},
 	commitments,
 	config::{self, CHUNK_SIZE},
@@ -45,7 +45,7 @@ use tracing::{debug, error, info, instrument};
 use crate::{
 	data::store_encoded_data_in_db,
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
-	proof,
+	proof::{self, data_positions},
 	types::{AppClientConfig, BlockVerified, OptionBlockRange, State},
 };
 
@@ -404,8 +404,23 @@ async fn process_block(
 	let data_cells = data_cells_from_rows(rows)
 		.wrap_err("Failed to create data cells from rows got from RPC")?;
 
-	let data = decode_app_extrinsics(lookup, dimensions, data_cells, app_id)
+	let data = decode_app_extrinsics(lookup, dimensions, data_cells.clone(), app_id)
 		.wrap_err("Failed to decode app extrinsics")?;
+
+	let first_extrinsic = data[0].clone();
+	if let Some(positions) = app_specific_cells(lookup, dimensions, app_id) {
+		if let Some(first_position) = positions.get(0) {
+			let data_cells = data_cells
+				.into_iter()
+				.skip_while(|cell| cell.position != *first_position)
+				.collect::<Vec<_>>();
+
+			match data_positions(data_cells, first_extrinsic) {
+				Some(positions) => info!("Positions: {positions:?}"),
+				None => info!("Positions: Not Found"),
+			}
+		};
+	}
 
 	debug!(block_number, "Storing data into database");
 	app_client

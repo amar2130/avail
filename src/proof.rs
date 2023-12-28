@@ -3,7 +3,7 @@
 use dusk_plonk::commitment_scheme::kzg10::PublicParameters;
 use itertools::{Either, Itertools};
 use kate_recovery::{
-	data::Cell,
+	data::{Cell, DataCell},
 	matrix::{Dimensions, Position},
 	proof,
 };
@@ -49,4 +49,39 @@ pub fn verify(
 		});
 
 	Ok((verified, unverified))
+}
+
+fn find_overlap<'a>(left: &'a [u8], right: &'a [u8]) -> &'a [u8] {
+	(0..=right.len())
+		.rev()
+		.find_map(|overlap_size| {
+			let right = &right[..overlap_size];
+			left.ends_with(right).then_some(right)
+		})
+		.unwrap_or(&[])
+}
+
+fn data_chunks(first_cell: &DataCell, data: Vec<u8>) -> Vec<Vec<u8>> {
+	let first = find_overlap(&first_cell.data[..31], &data).to_vec();
+	let rest = data[first.len()..].chunks(31).map(|chunk| chunk.to_vec());
+	vec![first].into_iter().chain(rest).collect::<Vec<Vec<_>>>()
+}
+
+pub fn data_positions(cells: Vec<DataCell>, data: Vec<u8>) -> Option<Vec<Position>> {
+	let chunks = data_chunks(&cells[0], data);
+	let positions = chunks
+		.iter()
+		.zip(cells)
+		.enumerate()
+		.filter_map(|(i, (data, cell))| {
+			let cell_data = cell.data[..31].to_vec();
+			match i {
+				0 => cell_data.ends_with(data),
+				_ if i == chunks.len() - 1 => cell_data.starts_with(data),
+				_ => &cell_data.to_vec() == data,
+			}
+			.then_some(cell.position)
+		})
+		.collect::<Vec<_>>();
+	(positions.len() == chunks.len()).then_some(positions)
 }
