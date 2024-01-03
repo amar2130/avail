@@ -45,7 +45,7 @@ use tracing::{debug, error, info, instrument};
 use crate::{
 	data::store_encoded_data_in_db,
 	network::{p2p::Client as P2pClient, rpc::Client as RpcClient},
-	proof::{self, data_positions},
+	proof,
 	types::{AppClientConfig, BlockVerified, OptionBlockRange, State},
 };
 
@@ -80,6 +80,13 @@ trait AppClient {
 		app_id: AppId,
 		block_number: u32,
 		data: &T,
+	) -> Result<()>;
+
+	async fn query_inclusion_proof(
+		&self,
+		transaction_index: u32,
+		block_number: u32,
+		extrinsic: Vec<u8>,
 	) -> Result<()>;
 }
 
@@ -223,6 +230,17 @@ impl AppClient for AppClientImpl {
 	) -> Result<()> {
 		store_encoded_data_in_db(self.db.clone(), app_id, block_number, &data)
 			.wrap_err("Failed to store data into database")
+	}
+
+	async fn query_inclusion_proof(
+		&self,
+		transaction_index: u32,
+		block_number: u32,
+		extrinsic: Vec<u8>,
+	) -> Result<()> {
+		self.rpc_client
+			.query_inclusion_proof(block_number, transaction_index, extrinsic)
+			.await
 	}
 }
 
@@ -407,19 +425,14 @@ async fn process_block(
 	let data = decode_app_extrinsics(lookup, dimensions, data_cells.clone(), app_id)
 		.wrap_err("Failed to decode app extrinsics")?;
 
+	// First transaction is timestamp so first data transaction per app is 0
+	// which probably has index 1 in the block
 	let first_extrinsic = data[0].clone();
-	if let Some(positions) = app_specific_cells(lookup, dimensions, app_id) {
-		if let Some(first_position) = positions.get(0) {
-			let data_cells = data_cells
-				.into_iter()
-				.skip_while(|cell| cell.position != *first_position)
-				.collect::<Vec<_>>();
-
-			match data_positions(data_cells, first_extrinsic) {
-				Some(positions) => info!("Positions: {positions:?}"),
-				None => info!("Positions: Not Found"),
-			}
-		};
+	if app_specific_cells(lookup, dimensions, app_id).is_some() {
+		app_client
+			.query_inclusion_proof(1, block_number, first_extrinsic)
+			.await
+			.unwrap();
 	}
 
 	debug!(block_number, "Storing data into database");

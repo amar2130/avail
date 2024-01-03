@@ -47,11 +47,6 @@ impl Submit for Submitter {
 			.await?
 			.number;
 
-		let _ = self
-			.node_client
-			.query_inclusion_proof(block_number, event.extrinsic_index())
-			.await;
-
 		Ok(SubmitResponse {
 			block_number,
 			block_hash: event.block_hash(),
