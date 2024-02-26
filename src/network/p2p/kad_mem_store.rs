@@ -18,6 +18,7 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use fxhash::FxHashMap;
 use libp2p::identity::PeerId;
 use libp2p::kad::store::{Error, RecordStore, Result};
 use libp2p::kad::{KBucketKey, ProviderRecord, Record, RecordKey, K_VALUE};
@@ -34,9 +35,9 @@ pub struct MemoryStore {
 	/// The configuration of the store.
 	config: MemoryStoreConfig,
 	/// The stored (regular) records.
-	records: HashMap<RecordKey, Record>,
+	records: FxHashMap<RecordKey, Record>,
 	/// The stored provider records.
-	providers: HashMap<RecordKey, SmallVec<[ProviderRecord; K_VALUE.get()]>>,
+	providers: FxHashMap<RecordKey, SmallVec<[ProviderRecord; K_VALUE.get()]>>,
 	/// The set of all provider records for the node identified by `local_key`.
 	///
 	/// Must be kept in sync with `providers`.
