@@ -14,7 +14,7 @@ pub const STATE_CF: &str = "avail_light_state_cf";
 
 /// Expected network Node versions. First version should be the main supported version,
 /// while all subsequent versions should be for backward compatibility/fallback/future-proofing versions.
-pub const EXPECTED_SYSTEM_VERSION: &[&str] = &["1.10", "1.11"];
+pub const EXPECTED_SYSTEM_VERSION: &[&str] = &["1.10", "1.11", "2.0"];
 pub const EXPECTED_SPEC_NAME: &str = "data-avail";
 
 #[derive(Clone)]
