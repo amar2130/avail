@@ -5,7 +5,7 @@ use rocksdb::{ColumnFamilyDescriptor, Options};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use super::FINALITY_SYNC_CHECKPOINT_KEY;
+use super::{FINALITY_SYNC_CHECKPOINT_KEY, KADEMLIA_STORE_CF};
 
 #[derive(Clone)]
 pub struct RocksDB {
@@ -50,6 +50,7 @@ impl From<Key> for (Option<&'static str>, Vec<u8>) {
 				Some(STATE_CF),
 				FINALITY_SYNC_CHECKPOINT_KEY.as_bytes().to_vec(),
 			),
+			Key::KademliaRecord(key) => (Some(KADEMLIA_STORE_CF), key),
 		}
 	}
 }

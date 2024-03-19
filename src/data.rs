@@ -40,6 +40,9 @@ pub const APP_DATA_CF: &str = "avail_light_app_data_cf";
 /// Column family for state
 pub const STATE_CF: &str = "avail_light_state_cf";
 
+/// Column family for kademlia store
+pub const KADEMLIA_STORE_CF: &str = "kademlia_store_cf";
+
 /// Sync finality checkpoint key name
 const FINALITY_SYNC_CHECKPOINT_KEY: &str = "finality_sync_checkpoint";
 
@@ -49,6 +52,7 @@ pub enum Key {
 	BlockHeader(u32),
 	VerifiedCellCount(u32),
 	FinalitySyncCheckpoint,
+	KademliaRecord(Vec<u8>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Decode, Encode)]

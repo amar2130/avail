@@ -20,14 +20,21 @@ pub mod analyzer;
 mod client;
 mod event_loop;
 mod kad_mem_store;
+mod kad_store;
 
 use crate::types::{LibP2PConfig, SecretKey};
 pub use client::Client;
 pub use event_loop::EventLoop;
 pub use kad_mem_store::MemoryStoreConfig;
+pub use kad_store::Entry;
+pub use kad_store::Record;
 
 use self::{client::BlockStat, kad_mem_store::MemoryStore};
 use libp2p_allow_block_list as allow_block_list;
+
+// pub trait RecordsIter {
+// 	fn records(&self) -> Result<impl Iterator<Item = Result<kad::Record>>>;
+// }
 
 #[derive(Debug)]
 pub enum QueryChannel {

@@ -8,6 +8,8 @@ use std::{
 	sync::{Arc, RwLock},
 };
 
+use super::KADEMLIA_STORE_CF;
+
 #[derive(Eq, Hash, PartialEq)]
 pub struct HashMapKey(pub String);
 
@@ -66,6 +68,7 @@ impl From<Key> for HashMapKey {
 				HashMapKey(format!("{CONFIDENCE_FACTOR_CF}:{block_number}"))
 			},
 			Key::FinalitySyncCheckpoint => HashMapKey(FINALITY_SYNC_CHECKPOINT_KEY.to_string()),
+			Key::KademliaRecord(key) => HashMapKey(format!("{KADEMLIA_STORE_CF}:{key}")),
 		}
 	}
 }
