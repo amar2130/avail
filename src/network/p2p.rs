@@ -1,3 +1,5 @@
+use self::{client::BlockStat, kad_store::RocksDBStore};
+use crate::types::{LibP2PConfig, SecretKey};
 use allow_block_list::BlockedPeers;
 use color_eyre::{eyre::WrapErr, Report, Result};
 use libp2p::{
@@ -7,6 +9,7 @@ use libp2p::{
 	swarm::NetworkBehaviour,
 	tcp, upnp, yamux, PeerId, Swarm, SwarmBuilder,
 };
+use libp2p_allow_block_list as allow_block_list;
 use multihash::{self, Hasher};
 use std::collections::HashMap;
 use tokio::sync::{
@@ -22,19 +25,10 @@ mod event_loop;
 mod kad_mem_store;
 mod kad_store;
 
-use crate::types::{LibP2PConfig, SecretKey};
 pub use client::Client;
 pub use event_loop::EventLoop;
 pub use kad_mem_store::MemoryStoreConfig;
-pub use kad_store::Entry;
-pub use kad_store::Record;
-
-use self::{client::BlockStat, kad_mem_store::MemoryStore};
-use libp2p_allow_block_list as allow_block_list;
-
-// pub trait RecordsIter {
-// 	fn records(&self) -> Result<impl Iterator<Item = Result<kad::Record>>>;
-// }
+pub use kad_store::{DatabaseIter, Entry, Iter, Record, StoreConfig};
 
 #[derive(Debug)]
 pub enum QueryChannel {
@@ -100,7 +94,7 @@ type CommandReceiver = mpsc::UnboundedReceiver<SendableCommand>;
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = false)]
 pub struct Behaviour {
-	kademlia: kad::Behaviour<MemoryStore>,
+	kademlia: kad::Behaviour<RocksDBStore>,
 	identify: identify::Behaviour,
 	ping: ping::Behaviour,
 	mdns: mdns::tokio::Behaviour,
@@ -123,7 +117,7 @@ fn generate_config(config: libp2p::swarm::Config, cfg: &LibP2PConfig) -> libp2p:
 async fn build_swarm(
 	cfg: &LibP2PConfig,
 	id_keys: &libp2p::identity::Keypair,
-	kad_store: MemoryStore,
+	kad_store: RocksDBStore,
 	is_ws_transport: bool,
 ) -> Result<Swarm<Behaviour>> {
 	// create Identify Protocol Config

@@ -1,3 +1,4 @@
+use crate::data::rocks_db::RocksDB;
 use crate::data::{Database, Key};
 use codec::{Decode, Encode};
 use libp2p::identity::PeerId;
@@ -11,7 +12,7 @@ use std::iter;
 use std::time::{Duration, Instant};
 use tracing::error;
 
-// use super::RecordsIter;
+pub type RocksDBStore = Store<RocksDB>;
 
 /// Flexible implementation of a `RecordStore`.
 pub struct Store<T>
@@ -116,7 +117,7 @@ impl From<Entry> for kad::Record {
 }
 
 pub struct DatabaseIter<T: Iterator<Item = kad::Record>> {
-	inner: T,
+	pub inner: T,
 }
 
 impl<T: Iterator<Item = kad::Record>> Iterator for DatabaseIter<T> {

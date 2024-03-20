@@ -1,9 +1,16 @@
-use crate::data::{self, Key, APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF};
+use crate::{
+	data::{self, Key, APP_DATA_CF, BLOCK_HEADER_CF, CONFIDENCE_FACTOR_CF, STATE_CF},
+	network::p2p::{DatabaseIter, Entry, Iter, Record},
+};
 use codec::{Decode, Encode};
 use color_eyre::eyre::{eyre, Context, Result};
-use rocksdb::{ColumnFamilyDescriptor, Options};
+use libp2p::kad;
+use rocksdb::{
+	ColumnFamilyDescriptor, DBIteratorWithThreadMode, DBWithThreadMode, IteratorMode,
+	MultiThreaded, Options,
+};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{iter, sync::Arc};
 
 use super::{FINALITY_SYNC_CHECKPOINT_KEY, KADEMLIA_STORE_CF};
 
@@ -12,14 +19,20 @@ pub struct RocksDB {
 	db: Arc<rocksdb::DB>,
 }
 
+const CF_LIST: [&str; 5] = [
+	CONFIDENCE_FACTOR_CF,
+	BLOCK_HEADER_CF,
+	APP_DATA_CF,
+	STATE_CF,
+	KADEMLIA_STORE_CF,
+];
+
 impl RocksDB {
 	pub fn open(path: &str) -> Result<RocksDB> {
-		let cf_opts = vec![
-			ColumnFamilyDescriptor::new(CONFIDENCE_FACTOR_CF, Options::default()),
-			ColumnFamilyDescriptor::new(BLOCK_HEADER_CF, Options::default()),
-			ColumnFamilyDescriptor::new(APP_DATA_CF, Options::default()),
-			ColumnFamilyDescriptor::new(STATE_CF, Options::default()),
-		];
+		let cf_opts = CF_LIST
+			.iter()
+			.map(|&cf| ColumnFamilyDescriptor::new(cf, Options::default()))
+			.collect::<Vec<_>>();
 
 		let mut db_opts = Options::default();
 		db_opts.create_if_missing(true);
@@ -126,5 +139,30 @@ impl data::Database for RocksDB {
 		self.db
 			.delete_cf(&cf_handle, key)
 			.wrap_err("Delete operation with Column Family failed on RocksDB")
+	}
+}
+
+fn to_kad_record(result: Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>) -> kad::Record {
+	// TODO: Error handling
+	let (key, value) = result.expect("Expected value, got error");
+	let decode_result = Record::decode(&mut &value[..]);
+	let record = decode_result.expect("Expected valid encoded record, got invalid");
+	Entry(key.to_vec(), record).into()
+}
+
+impl Iter for RocksDB {
+	type Iterator = DatabaseIter<
+		iter::Map<
+			DBIteratorWithThreadMode<'static, DBWithThreadMode<MultiThreaded>>,
+			fn(Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>) -> kad::Record,
+		>,
+	>;
+
+	fn iter(&self) -> Self::Iterator {
+		let inner = self
+			.db
+			.full_iterator(IteratorMode::Start)
+			.map(to_kad_record as fn(_) -> _);
+		DatabaseIter { inner }
 	}
 }

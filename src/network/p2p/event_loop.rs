@@ -6,7 +6,8 @@ use libp2p::{
 	identify::{self, Info},
 	identity::Keypair,
 	kad::{
-		self, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult, QueryStats, RecordKey,
+		self, store::RecordStore, BootstrapOk, GetRecordOk, InboundRequest, QueryId, QueryResult,
+		QueryStats, RecordKey,
 	},
 	mdns,
 	multiaddr::Protocol,
@@ -26,15 +27,15 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
-	network::p2p::kad_mem_store::MemoryStore,
+	data::rocks_db::RocksDB,
 	shutdown::Controller,
 	telemetry::{MetricCounter, MetricValue, Metrics},
 	types::{AgentVersion, IdentifyConfig, KademliaMode, LibP2PConfig, TimeToLive},
 };
 
 use super::{
-	build_swarm, client::BlockStat, Behaviour, BehaviourEvent, CommandReceiver, EventLoopEntries,
-	QueryChannel, SendableCommand,
+	build_swarm, client::BlockStat, kad_store::Store, Behaviour, BehaviourEvent, CommandReceiver,
+	EventLoopEntries, QueryChannel, SendableCommand,
 };
 
 // RelayState keeps track of all things relay related
@@ -127,11 +128,12 @@ impl EventLoop {
 		id_keys: &Keypair,
 		is_fat_client: bool,
 		is_ws_transport: bool,
+		db: RocksDB,
 		shutdown: Controller<String>,
 	) -> Self {
 		let bootstrap_interval = cfg.bootstrap_interval;
 		let peer_id = id_keys.public().to_peer_id();
-		let store = MemoryStore::with_config(peer_id, (&cfg).into());
+		let store = Store::with_config(peer_id, (&cfg).into(), db);
 
 		let swarm = build_swarm(&cfg, id_keys, store, is_ws_transport)
 			.await
