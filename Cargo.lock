@@ -897,7 +897,7 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 [[package]]
 name = "avail-base"
 version = "0.1.0"
-source = "git+https://github.com/availproject/avail.git?branch=main#3c495ddca09706aa0f4c78c3ba358988df48ad32"
+source = "git+https://github.com/availproject/avail.git?branch=luka/avail-subxt-insecure#89ef8ea35320df2e92fa53ba55edb073e356cb61"
 dependencies = [
  "avail-core",
  "binary-merkle-tree",
@@ -1009,7 +1009,7 @@ dependencies = [
 [[package]]
 name = "avail-subxt"
 version = "0.5.0"
-source = "git+https://github.com/availproject/avail.git?branch=main#3c495ddca09706aa0f4c78c3ba358988df48ad32"
+source = "git+https://github.com/availproject/avail.git?branch=luka/avail-subxt-insecure#89ef8ea35320df2e92fa53ba55edb073e356cb61"
 dependencies = [
  "anyhow",
  "avail-base",
